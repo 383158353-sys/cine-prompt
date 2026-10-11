@@ -1,0 +1,39 @@
+// 扩展 options 页的 HTML 内容（以 JS 字符串导出，避免 Vite 把 .html 源文件当 HTML 模块解析失败）
+export default `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>影词模方 扩展设置</title>
+  <style>
+    body { font-family: -apple-system, "Segoe UI", "PingFang SC", sans-serif; max-width: 560px; margin: 40px auto; padding: 0 20px; color: #222; }
+    h1 { font-size: 18px; }
+    label { display: block; font-size: 13px; margin: 16px 0 6px; font-weight: 600; }
+    input { width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; }
+    .hint { font-size: 12px; color: #777; margin-top: 4px; line-height: 1.6; }
+    button { margin-top: 20px; padding: 9px 18px; background: #0f0f10; color: #fff; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; }
+    .ok { color: #16a34a; font-size: 12px; margin-left: 12px; }
+  </style>
+</head>
+<body>
+  <h1>✦ 影词模方 浮窗设置</h1>
+  <p style="font-size:13px;color:#666">小窗会调用你部署的 enhancePrompt 后端接口。请填写以下地址。</p>
+
+  <label>enhancePrompt 接口地址</label>
+  <input id="endpoint" placeholder="https://你的应用地址/api/functions/enhancePrompt" />
+  <div class="hint">获取方法：打开你的完整应用，按 F12 → Network，触发一次"优化生成"，找到 enhancePrompt 请求，复制完整 URL 粘贴到此。</div>
+
+  <label>完整应用地址（打开完整软件用）</label>
+  <input id="appUrl" placeholder="https://你的应用地址" />
+
+  <div style="margin-top:24px">
+    <button id="save">保存</button>
+    <span id="msg" class="ok"></span>
+  </div>
+
+  <hr style="margin-top:32px;border:none;border-top:1px solid #eee" />
+  <h2 style="font-size:15px">自定义快捷键</h2>
+  <p class="hint">1. 打开 chrome://extensions/shortcuts<br>2. 找到「PromptCinema 浮窗增强 → 打开/关闭提示词增强浮窗」<br>3. 点击输入框，按下你想要的快捷键组合即可。</p>
+
+  <script src="options.js"></script>
+</body>
+</html>`;

@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "影词模方 浮窗增强",
+  "version": "1.0.0",
+  "description": "在任意网页用快捷键唤起 AI 提示词增强小窗，调用你的 enhancePrompt 接口。",
+  "permissions": ["storage"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "影词模方 增强浮窗" },
+  "commands": {
+    "toggle-enhancer": {
+      "suggested_key": { "default": "Ctrl+Shift+E", "mac": "Command+Shift+E" },
+      "description": "打开/关闭提示词增强浮窗"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html"
+}

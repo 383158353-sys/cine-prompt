@@ -1,0 +1,53 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import { once } from 'node:events';
+import { parseEnv } from 'node:util';
+
+test('API settings persist locally, never disclose keys, and test without saving',async t=>{
+  process.env.AI_API_KEY='settings-test-token';
+  process.env.AI_MODEL='original-model';
+  process.env.AI_BASE_URL='https://example.test/v1';
+  const {config,upstream}=await import('../server/ai.mjs');
+  const {saveSettings,publicSettings,testSettings,validateSettings,listModels}=await import('../server/settings.mjs');
+  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'cine-settings-'));
+  const file=path.join(directory,'.env.local');
+  await fs.writeFile(file,'# Keep advanced options\nAI_IMAGE_MODEL=image-model\nAI_MODEL=old\n');
+  const saved=await saveSettings({provider:'compatible',baseUrl:'https://example.test/v1/',apiKey:'test-$literal#token',model:'new-model'},file);
+  assert.deepEqual(saved,{provider:'compatible',baseUrl:'https://example.test/v1',model:'new-model',modelGemini:'',modelGpt:'',modelClaude:'',hasKey:true});
+  assert.ok(!JSON.stringify(saved).includes('token'));
+  const disk=parseEnv(await fs.readFile(file,'utf8'));
+  assert.equal(disk.AI_API_KEY,'test-$literal#token');assert.equal(disk.AI_MODEL,'new-model');assert.equal(disk.AI_IMAGE_MODEL,'image-model');
+  assert.equal(config.AI_MODEL,'new-model');
+  await saveSettings({provider:'compatible',baseUrl:saved.baseUrl,apiKey:'',model:'another-model'},file);
+  assert.equal(config.AI_API_KEY,'test-$literal#token');
+  assert.throws(()=>validateSettings({provider:'compatible',baseUrl:'https://other.test/v1',apiKey:'',model:'m'}),/重新填写/);
+  for(const baseUrl of ['ftp://example.test','https://user:password@example.test','https://example.test?key=x','http://example.test']) assert.throws(()=>validateSettings({provider:'compatible',baseUrl,apiKey:'dummy',model:'m'}));
+  assert.throws(()=>validateSettings({provider:'compatible',baseUrl:saved.baseUrl,apiKey:'bad\nvalue',model:'m'}));
+  assert.throws(()=>validateSettings({provider:'gemini',baseUrl:'https://example.test/v1',apiKey:'dummy',model:'m'}),/Google 官方/);
+  let status=200, content='OK', received;
+  const mock=http.createServer(async(req,res)=>{
+    const chunks=[];for await(const chunk of req)chunks.push(chunk);
+    received={url:req.url,body:chunks.length?JSON.parse(Buffer.concat(chunks)):null,authorization:req.headers.authorization};
+    res.writeHead(status,{'Content-Type':'application/json'});
+    if(req.method==='GET'){res.end(JSON.stringify({data:[{id:'cheap-model'},{id:'vision-model'},{id:'cheap-model'}]}));return;}
+    const ok = req.headers['x-goog-api-key'] ? {candidates:[{content:{parts:[{text:content}]}}]} : {choices:[{message:{content}}]};
+    res.end(JSON.stringify(status===200 ? ok : {error:'do-not-echo-provider-body'}));
+  });
+  mock.listen(0,'127.0.0.1');await once(mock,'listening');t.after(()=>new Promise(resolve=>mock.close(resolve)));
+  const input={provider:'compatible',baseUrl:`http://127.0.0.1:${mock.address().port}/v1`,apiKey:'temporary-test-token',model:'test-model'};
+  const before=await fs.readFile(file,'utf8');
+  assert.match((await testSettings(input)).message,/连接成功/);
+  assert.equal(received.url,'/v1/chat/completions');assert.equal(received.body.model,'test-model');assert.equal(received.authorization,'Bearer temporary-test-token');
+  assert.equal(await fs.readFile(file,'utf8'),before);assert.equal(publicSettings().model,'another-model');
+  const listed=await listModels(input);assert.deepEqual(listed.models,['cheap-model','vision-model']);assert.equal(received.url,'/v1/models');
+  const gemini=await upstream('/chat/completions',{model:'gemini-3.1-flash-lite',messages:[{role:'system',content:'JSON only'},{role:'user',content:[{type:'text',text:'describe'},{type:'image_url',image_url:{url:'data:image/png;base64,aGVsbG8='}}]}]},{AI_PROVIDER:'gemini',AI_BASE_URL:`http://127.0.0.1:${mock.address().port}/v1beta`,AI_API_KEY:'gemini-test-key'});
+  assert.equal(gemini.choices[0].message.content,'OK');
+  assert.equal(received.url,'/v1beta/models/gemini-3.1-flash-lite:generateContent');
+  assert.equal(received.authorization,undefined);assert.equal(received.body.systemInstruction.parts[0].text,'JSON only');assert.equal(received.body.contents[0].parts[1].inlineData.mimeType,'image/png');
+  status=401;await assert.rejects(testSettings(input),/HTTP 401/);
+  status=200;content='';await assert.rejects(testSettings(input),/返回格式不兼容/);
+});
