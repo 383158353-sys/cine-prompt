@@ -61,12 +61,33 @@ test('local application integration with a mock OpenAI-compatible provider', asy
     const forbidden=await fetch(base+'/api/local/settings',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://other.test'},body:'{}'});
     assert.equal(forbidden.status,403);
   });
+  const bridgeHeaders={'X-Cine-Bridge':'1','Content-Type':'application/json',Origin:'plugin://com.local.lk888.psedit'};
+  await t.test('bridge health enforces its own origin and header policy',async()=>{
+    assert.equal((await fetch(base+'/api/bridge/health')).status,403);
+    assert.equal((await fetch(base+'/api/bridge/health',{headers:{'X-Cine-Bridge':'1',Origin:'https://attacker.example'}})).status,403);
+    const health=await fetch(base+'/api/bridge/health',{headers:bridgeHeaders});
+    assert.equal(health.status,200);assert.equal((await health.json()).model,'mock-vision');
+    assert.equal(health.headers.get('access-control-allow-origin'),'plugin://com.local.lk888.psedit');
+    const options=await fetch(base+'/api/bridge/optimize',{method:'OPTIONS',headers:{Origin:'plugin://com.local.lk888.psedit','Access-Control-Request-Headers':'content-type,x-cine-bridge'}});
+    assert.equal(options.status,204);assert.match(options.headers.get('access-control-allow-headers'),/X-Cine-Bridge/);
+  });
   let image;
   await t.test('upload and conversion to vision data URL',async()=>{
     const form=new FormData();form.append('file',new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aPhkAAAAASUVORK5CYII=','base64')],{type:'image/png'}),'reference.png');
     image=(await (await fetch(base+'/api/local/upload',{method:'POST',body:form})).json()).file_url;
     assert.match(image,/^\/uploads\//);
     assert.equal((await fetch(base+image)).status,200);
+  });
+  await t.test('bridge validates images, optimizes in order and writes PS history',async()=>{
+    const data='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aPhkAAAAASUVORK5CYII=';
+    const response=await fetch(base+'/api/bridge/optimize',{method:'POST',headers:bridgeHeaders,body:JSON.stringify({text:'把衣服改成红色丝绒',images:[{name:'选区.png',data},{name:'参考.png',data}],purpose:'ps_local_edit',target:'banana2',language:'zh'})});
+    const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.ok(result.prompt);assert.ok(result.prompt_en);assert.ok(result.prompt_zh);assert.ok(result.history_id);
+    const last=calls.at(-1);assert.equal(last.body.messages.at(-1).content.filter(part=>part.type==='image_url').length,2);assert.match(last.body.messages.at(-1).content[0].text,/Photoshop 局部改图/);
+    const saved=(await ent('Prompt','get',result.history_id)).data;assert.equal(saved.source,'ps');assert.equal(saved.raw_input,'把衣服改成红色丝绒');assert.equal(saved.context.file_urls.length,2);
+    const tooMany=await fetch(base+'/api/bridge/optimize',{method:'POST',headers:bridgeHeaders,body:JSON.stringify({text:'x',images:Array(15).fill({name:'x.png',data})})});
+    assert.equal(tooMany.status,400);
+    const invalid=await fetch(base+'/api/bridge/optimize',{method:'POST',headers:bridgeHeaders,body:JSON.stringify({text:'x',images:[{name:'x.gif',data:'data:image/gif;base64,R0lGODlh'}]})});
+    assert.equal(invalid.status,400);
   });
   for(const mode of ['enhance','reverse','repair','sheet','viewpoint','style_swap','video_director']) {
     await t.test(`${mode} reaches compatible provider and returns original fields`,async()=>{

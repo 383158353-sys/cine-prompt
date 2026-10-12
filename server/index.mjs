@@ -8,6 +8,7 @@ import { entity, localUser } from './local-client.mjs';
 import { config, uploadsDir, uploadPath } from './ai.mjs';
 
 import { publicSettings, saveSettings, testSettings, listModels } from './settings.mjs';
+import { authorizeBridge, bridgeCors, optimizeBridge } from './bridge.mjs';
 
 const functions = {};
 for (const name of ['enhancePrompt','analyzeStyleImage','generateStyleThumbnails','parseStoryboard']) {
@@ -29,12 +30,26 @@ async function body(req) {
   return Buffer.concat(chunks);
 }
 function json(res, value, status=200) {res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));}
+function bridgeJson(req,res,value,status=200) {res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...bridgeCors(req.headers.origin || '')});res.end(JSON.stringify(value));}
 const server = http.createServer(async(req,res) => {
   try {
     const host = req.headers.host;
     if (![ `127.0.0.1:${port}`, `localhost:${port}` ].includes(host)) return json(res,{error:'仅允许本机访问'},403);
-    if (req.headers.origin && ![`http://127.0.0.1:${port}`,`http://localhost:${port}`].includes(req.headers.origin)) return json(res,{error:'不允许跨站请求'},403);
     const url = new URL(req.url, `http://${host}`);
+    if(url.pathname.startsWith('/api/bridge/')) {
+      try {
+        const cors=authorizeBridge(req.headers,{requireHeader:req.method!=='OPTIONS'});
+        if(req.method==='OPTIONS'){res.writeHead(204,{'Cache-Control':'no-store',...cors});return res.end();}
+        if(url.pathname==='/api/bridge/health' && req.method==='GET') return bridgeJson(req,res,{ok:true,version:'1.0.0',model:publicSettings().model || ''});
+        if(url.pathname==='/api/bridge/optimize' && req.method==='POST') {
+          if(!req.headers['content-type']?.startsWith('application/json')) return bridgeJson(req,res,{error:'需要 JSON 请求'},415);
+          const input=JSON.parse((await body(req)).toString());
+          return bridgeJson(req,res,await optimizeBridge(input,{enhancePrompt:functions.enhancePrompt}));
+        }
+        return bridgeJson(req,res,{error:'桥接接口不存在'},404);
+      } catch(error) {return bridgeJson(req,res,{error:error.message || '桥接请求失败'},error.status || 400);}
+    }
+    if (req.headers.origin && ![`http://127.0.0.1:${port}`,`http://localhost:${port}`].includes(req.headers.origin)) return json(res,{error:'不允许跨站请求'},403);
     if(url.pathname==='/api/local/settings' && req.method==='GET') return json(res,publicSettings());
     if(['/api/local/settings','/api/local/settings/test','/api/local/settings/models'].includes(url.pathname) && req.method==='POST') {
       if(!req.headers['content-type']?.startsWith('application/json')) return json(res,{error:'需要 JSON 请求'},415);
