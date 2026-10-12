@@ -4,7 +4,7 @@ import PromptEnhancer from '@/components/PromptEnhancer';
 import RecoverableBoundary from '@/components/RecoverableBoundary';
 import PromptCard from '@/components/PromptCard';
 import PwaInstallPrompt from '@/components/PwaInstallPrompt';
-import { Search, Sparkles, Library, Star } from 'lucide-react';
+import { Search, Sparkles, Library, Star, PlugZap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import BrandLogo from '@/components/BrandLogo';
 
@@ -55,6 +55,10 @@ export default function Home() {
           <BrandLogo size={38} titleClass="font-semibold text-lg" />
           <div className="flex items-center gap-3">
             <PwaInstallPrompt />
+            <Link to="/photoshop" className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border/60 hover:bg-muted transition-colors">
+              <PlugZap className="w-3.5 h-3.5" />
+              PS 联动
+            </Link>
             <Link to="/settings" className="text-xs px-3 py-1.5 rounded-lg border border-border/60 hover:bg-muted transition-colors">API 设置</Link>
             <Link
               to="/history"

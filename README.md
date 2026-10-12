@@ -8,6 +8,8 @@
 
 Windows 可直接双击 `启动影词模方.bat`。也仍支持用 `配置API.bat` 编辑配置。
 
+面向普通用户的 Windows 联动包可运行 `npm run package:windows` 生成。安装包自带 Node 运行时、影词魔方本地网页和 Photoshop「局部改图」插件；用户解压后双击“安装.cmd”即可，不需要预装 Node.js。构建机需设置 `PS_PLUGIN_SOURCE` 指向 `ps-local-edit/plugin`，未设置时会尝试本机开发路径 `D:\PS2025\ps-local-edit\plugin`。生成文件位于 `release/CinePrompt-Photoshop-Windows.zip`。
+
 ```env
 AI_PROVIDER=compatible
 AI_BASE_URL=https://api.lingkeai.ai/api/v1

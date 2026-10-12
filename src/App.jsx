@@ -15,6 +15,7 @@ import ResetPassword from '@/pages/ResetPassword';
 // Add page imports here
 import History from '@/pages/History';
 import Settings from '@/pages/Settings';
+import InstallPhotoshop from '@/pages/InstallPhotoshop';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -50,6 +51,7 @@ const AuthenticatedApp = () => {
         <Route path="/" element={<Home />} />
         <Route path="/history" element={<History />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/photoshop" element={<InstallPhotoshop />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>
