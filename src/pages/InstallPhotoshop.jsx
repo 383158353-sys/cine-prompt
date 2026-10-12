@@ -3,11 +3,11 @@ import { Link } from 'react-router-dom';
 import { CheckCircle2, Download, HardDrive, PlugZap, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-const DOWNLOAD_URL = 'https://github.com/383158353-sys/cine-prompt/releases/latest/download/CinePrompt-Photoshop-Windows.zip';
+const DOWNLOAD_URL = 'https://github.com/383158353-sys/cine-prompt/releases/latest/download/CinePrompt-Photoshop-Windows.exe';
 
 const steps = [
-  ['下载安装包', '下载 ZIP 后右键“全部解压缩”，不要直接在压缩包里运行。'],
-  ['双击安装', '双击“安装.cmd”。不需要管理员权限，也不需要另装 Node.js。'],
+  ['下载安装包', '下载 CinePrompt-Photoshop-Windows.exe。'],
+  ['双击安装', '双击安装程序即可。不需要管理员权限，也不需要另装 Node.js。'],
   ['设置一次 API', '安装完成会打开影词魔方。在“API 设置”中填写自己的接口信息并保存。'],
   ['打开 Photoshop', '从“增效工具”打开“局部改图”，在修改要求右侧点击“✨ 优化”。'],
 ];
@@ -29,7 +29,7 @@ export default function InstallPhotoshop() {
           </div>
           <h1 className="text-2xl font-bold mb-2">安装 Photoshop 连接器</h1>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            一个安装包同时配置影词魔方本地网页版、局部改图插件和后台连接服务。换电脑后重新安装即可。
+            一个安装包同时配置影词魔方桌面悬浮版、局部改图插件和本机连接服务。换电脑后重新安装即可。
           </p>
         </div>
 

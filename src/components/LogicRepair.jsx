@@ -61,11 +61,11 @@ function PromptBlock({ title, text, accent }) {
   );
 }
 
-export default function LogicRepair({ onSaved, initialContext }) {
-  const [images, setImages] = useState(() => initialContext?.file_urls?.map((url) => ({ file: null, preview: url, url })) || []);
+export default function LogicRepair({ onSaved, initialContext, sharedImages, onSharedImagesChange, sharedContext, onSharedContextChange, sharedModel, onSharedModelChange, selectedStyles = [], projectStyle, onBridgeComplete }) {
+  const [localImages, setLocalImages] = useState(() => initialContext?.file_urls?.map((url) => ({ file: null, preview: url, url })) || []);
   const [dragOver, setDragOver] = useState(false);
-  const [context, setContext] = useState(initialContext?.context || '');
-  const [model, setModel] = useState(initialContext?.model || 'automatic');
+  const [localContext, setLocalContext] = useState(initialContext?.context || '');
+  const [localModel, setLocalModel] = useState(initialContext?.model || 'automatic');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [annotateIdx, setAnnotateIdx] = useState(null);
@@ -73,6 +73,12 @@ export default function LogicRepair({ onSaved, initialContext }) {
   const [analysisOpen, setAnalysisOpen] = useState(false);
   const fileInput = useRef(null);
   const resultRef = useRef(null);
+  const images = sharedImages ?? localImages;
+  const setImages = onSharedImagesChange ?? setLocalImages;
+  const context = sharedContext ?? localContext;
+  const setContext = onSharedContextChange ?? setLocalContext;
+  const model = sharedModel ?? localModel;
+  const setModel = onSharedModelChange ?? setLocalModel;
 
   useEffect(() => {
     if (result && resultRef.current) {
@@ -115,7 +121,12 @@ export default function LogicRepair({ onSaved, initialContext }) {
       }
       file_urls = [...file_urls, ...existingUrls];
       const res = await base44.functions.invoke('enhancePrompt', {
-        mode: 'repair', raw_input: context, file_urls, model
+        mode: 'repair',
+        raw_input: context,
+        file_urls,
+        model,
+        styles: selectedStyles.map((style) => ({ name: style.name, category: style.category, style_prompt: style.style_prompt })),
+        project_style: projectStyle ? { name: projectStyle.name, system_prompt: projectStyle.system_prompt || '' } : undefined
       });
       const data = res?.data ?? res;
       if (!data || data.error) throw new Error(data?.error || '修复失败');
@@ -129,11 +140,18 @@ export default function LogicRepair({ onSaved, initialContext }) {
           direction: 'repair',
           rating: 3,
           tags: data.tags || [],
-          context: { mode: 'repair', context, model, file_urls }
+          context: { mode: 'repair', context, model, file_urls, style_names: selectedStyles.map((style) => style.name), project_style_id: projectStyle?.id }
         });
         onSaved?.();
       } catch {}
       setResult(data);
+      if (onBridgeComplete) {
+        await onBridgeComplete({
+          prompt: data.repair_prompt_zh || data.repair_prompt_en || '',
+          prompt_zh: data.repair_prompt_zh || '',
+          prompt_en: data.repair_prompt_en || ''
+        });
+      }
       try {
         await navigator.clipboard.writeText(data.repair_prompt_zh || '');
         toast({ title: '已自动复制中文修复提示词' });

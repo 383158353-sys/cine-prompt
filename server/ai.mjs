@@ -6,7 +6,9 @@ import { readFileSync, existsSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import { modelImage } from './model-image.mjs';
 
-const env = { ...loadEnv('development', process.cwd(), ''), ...(existsSync('.env.local') ? parseEnv(readFileSync('.env.local', 'utf8')) : {}), ...process.env };
+const appRoot = process.env.CINE_APP_ROOT || process.cwd();
+const settingsFile = process.env.CINE_SETTINGS_FILE || path.resolve('.env.local');
+const env = { ...loadEnv('development', appRoot, ''), ...(existsSync(settingsFile) ? parseEnv(readFileSync(settingsFile, 'utf8')) : {}), ...process.env };
 export const dataDir = path.resolve(env.LOCAL_DATA_DIR || 'local-data');
 export const uploadsDir = path.join(dataDir, 'uploads');
 export const config = env;

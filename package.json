@@ -2,6 +2,7 @@
   "name": "cine-prompt-local",
   "private": true,
   "version": "1.0.0",
+  "main": "desktop/main.cjs",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -14,7 +15,9 @@
     "start": "node server/index.mjs",
     "test": "node --test tests/*.test.mjs",
     "check:api": "node server/check-api.mjs",
-    "package:windows": "powershell -ExecutionPolicy Bypass -File scripts/build-windows-bundle.ps1"
+    "package:windows": "powershell -ExecutionPolicy Bypass -File scripts/build-desktop-installer.ps1",
+    "desktop": "electron .",
+    "desktop:dist": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^17.0.0",
@@ -93,6 +96,8 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "baseline-browser-mapping": "^2.8.32",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
     "eslint": "^9.19.0",
     "eslint-plugin-react": "^7.37.4",
     "eslint-plugin-react-hooks": "^5.0.0",
@@ -102,6 +107,43 @@
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.2"
+  },
+  "build": {
+    "appId": "com.cineprompt.desktop",
+    "productName": "影词魔方",
+    "electronDist": "node_modules/electron/dist",
+    "asar": false,
+    "directories": {
+      "output": "release-desktop"
+    },
+    "files": [
+      "dist/**/*",
+      "server/**/*",
+      "desktop/**/*",
+      "public/brand-icon.png",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "desktop/package/ps-plugin",
+        "to": "ps-plugin"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "CinePrompt-Photoshop-Windows.exe"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "影词魔方",
+      "deleteAppDataOnUninstall": false
+    }
   },
   "engines": {
     "node": ">=22"

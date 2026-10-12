@@ -21,7 +21,7 @@ function extractError(e) {
   return e?.message || '未知错误';
 }
 
-export default function VideoDirector({ onSaved, initialContext }) {
+export default function VideoDirector({ onSaved, initialContext, sharedStyles = [], projectStyle }) {
   const [rawInput, setRawInput] = useState(initialContext?.raw_input || '');
   const [targetModel, setTargetModel] = useState(initialContext?.targetModel || 'auto');
   const [model, setModel] = useState(initialContext?.model || 'automatic');
@@ -78,7 +78,9 @@ export default function VideoDirector({ onSaved, initialContext }) {
         target_model: targetModel,
         model,
         file_urls: fileUrls,
-        dialogue_optimize: optimizeDialogue
+        dialogue_optimize: optimizeDialogue,
+        styles: sharedStyles.map((style) => ({ name: style.name, category: style.category, style_prompt: style.style_prompt })),
+        project_style: projectStyle ? { name: projectStyle.name, system_prompt: projectStyle.system_prompt || '' } : undefined
       });
       const data = res.data;
       if (!data || data.error) throw new Error(data?.error || '增强失败');

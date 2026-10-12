@@ -16,6 +16,8 @@ node_modules
 dist
 dist-ssr
 release
+release-desktop
+desktop/package
 *.local
 
 # Editor directories and files

@@ -49,6 +49,10 @@ function buildFinalPrompt(data) {
   return { en, zh };
 }
 
+function fileDataUrl(file) {
+  return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('新增图片读取失败'));reader.readAsDataURL(file);});
+}
+
 export default function PromptEnhancer({ onSaved, compact = false }) {
   const [group, setGroup] = useState('character');
   const [direction, setDirection] = useState('character_default');
@@ -68,6 +72,10 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
   const [result, setResult] = useState(null);
   const [rated, setRated] = useState(false);
   const [selectedStyles, setSelectedStyles] = useState([]);
+  const [projectStyleId, setProjectStyleId] = useState('');
+  const [bridgeSessionId,setBridgeSessionId]=useState('');
+  const [bridgeOriginalCount,setBridgeOriginalCount]=useState(0);
+  const [bridgeCompleted,setBridgeCompleted]=useState(false);
   const [showStyleLib, setShowStyleLib] = useState(false);
   const fileInput = useRef(null);
   const cancelRef = useRef(false);
@@ -102,6 +110,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
         if (ctx.direction) setDirection(ctx.direction);
         if (ctx.model) setModel(ctx.model);
         if (ctx.target) setTargetKey(ctx.target);
+        if (ctx.project_style_id) setProjectStyleId(ctx.project_style_id);
         if (ctx.raw_input) setRawInput(ctx.raw_input);
         if (ctx.file_urls?.length) setImages(ctx.file_urls.map((url) => ({ file: null, preview: url, url })));
       } else if (ctx.mode === 'reverse') {
@@ -119,6 +128,16 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
     }).catch(() => {});
   }, [location.search]);
 
+  useEffect(()=>{
+    const id=new URLSearchParams(location.search).get('bridge');
+    if(!id)return;
+    fetch(`/api/local/bridge-session?id=${encodeURIComponent(id)}`).then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error);return data;}).then(session=>{
+      setBridgeSessionId(session.id);setBridgeOriginalCount(session.originalImageCount || 0);setBridgeCompleted(false);
+      setRawInput(session.text || '');
+      setImages((session.images || []).map(image=>({file:null,preview:image.url,url:image.url,bridgeOriginal:true,name:image.name})));
+    }).catch(error=>toast({title:'PS 联动读取失败',description:error.message,variant:'destructive'}));
+  },[location.search]);
+
   // 合并内置 + 自定义方向
   const builtInStyles = STYLES[group] || [];
   const customStyles = customDirs
@@ -134,6 +153,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
   const allStyles = [...builtInStyles, ...customStyles];
 
   const selected = allStyles.find((s) => s.key === direction) || allStyles[0];
+  const selectedProjectStyle = customDirs.find((item) => item.id === projectStyleId) || null;
 
   const selectGroup = (g) => {
     setGroup(g);
@@ -174,6 +194,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
     setRated(false);
     try {
       let fileUrls = null;
+      let bridgeAddedImages=[];
       const newFiles = images.filter((img) => img.file).map((img) => img.file);
       const existingUrls = images.filter((img) => img.url && !img.file).map((img) => img.url);
       if (newFiles.length > 0 || existingUrls.length > 0) {
@@ -182,6 +203,10 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
           const compressed = await compressImages(newFiles);
           const uploads = await Promise.all(compressed.map((f) => base44.integrations.Core.UploadFile({ file: f })));
           uploaded = uploads.map((u) => u.file_url);
+          if(bridgeSessionId){
+            const available=Math.max(0,6-bridgeOriginalCount);
+            bridgeAddedImages=await Promise.all(compressed.slice(0,available).map(async(file,index)=>({name:newFiles[index]?.name || `影词魔方新增图片${index+1}.webp`,data:await fileDataUrl(file)})));
+          }
         }
         fileUrls = [...uploaded, ...existingUrls];
       }
@@ -196,6 +221,19 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
         target_label: selectedTarget.label,
         target_type: selectedTarget.type
       };
+      if (selectedStyles.length > 0) {
+        payload.styles = selectedStyles.map((s) => ({
+          name: s.name,
+          category: s.category,
+          style_prompt: s.style_prompt
+        }));
+      }
+      if (selectedProjectStyle) {
+        payload.project_style = {
+          name: selectedProjectStyle.name,
+          system_prompt: selectedProjectStyle.system_prompt || ''
+        };
+      }
       if (selected.isCustom) {
         payload.base_direction = selected.base_direction;
         payload.system_prompt = selected.system_prompt;
@@ -203,11 +241,6 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
       }
       if (useStyleSwap) {
         payload.mode = 'style_swap';
-        payload.styles = selectedStyles.map((s) => ({
-          name: s.name,
-          category: s.category,
-          style_prompt: s.style_prompt
-        }));
       }
       const res = await base44.functions.invoke('enhancePrompt', payload);
       if (cancelRef.current) return; // 已取消，丢弃结果
@@ -227,7 +260,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
           direction: data.direction || selected.key,
           rating: 3,
           tags: data.tags || [],
-          context: { mode: useStyleSwap ? 'style_swap' : 'enhance', group, direction: selected.key, model, target: targetKey, raw_input: rawInput, file_urls: fileUrls, style_names: useStyleSwap ? selectedStyles.map((s) => s.name) : undefined }
+          context: { mode: useStyleSwap ? 'style_swap' : 'enhance', group, direction: selected.key, model, target: targetKey, raw_input: rawInput, file_urls: bridgeSessionId ? undefined : fileUrls, image_count:bridgeSessionId ? fileUrls?.length || 0 : undefined, style_names: selectedStyles.map((s) => s.name), project_style_id: projectStyleId || undefined }
         });
         savedId = saved.id;
         onSaved?.();
@@ -237,6 +270,11 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
       if (cancelRef.current) return; // 已取消，不显示结果
       const finalPrompt = buildFinalPrompt(data);
       setResult({ ...data, _savedId: savedId, _fileUrls: fileUrls, final_prompt: finalPrompt.en, final_prompt_zh: finalPrompt.zh });
+      if(bridgeSessionId && !bridgeCompleted){
+        const response=await fetch('/api/local/bridge-session/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:bridgeSessionId,prompt:finalPrompt.zh || data.enhanced_prompt_zh || finalPrompt.en || data.enhanced_prompt,prompt_en:finalPrompt.en || data.enhanced_prompt || '',prompt_zh:finalPrompt.zh || data.enhanced_prompt_zh || '',images:bridgeAddedImages})});
+        const completed=await response.json();if(!response.ok)throw new Error(completed.error || '回传 Photoshop 失败');
+        setBridgeCompleted(true);toast({title:'已回传 Photoshop',description:bridgeAddedImages.length?`提示词和 ${bridgeAddedImages.length} 张新增图片已同步`:'优化提示词已填回 PS'});
+      }
       try {
         const copyText = `${finalPrompt.zh || data.enhanced_prompt_zh || ''}\n\n${finalPrompt.en || data.enhanced_prompt}`;
         await navigator.clipboard.writeText(copyText.trim());
@@ -304,6 +342,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {bridgeSessionId && <div className={`rounded-lg border px-3 py-2 text-xs ${bridgeCompleted?'border-emerald-300 bg-emerald-50 text-emerald-700':'border-blue-300 bg-blue-50 text-blue-700'}`}>{bridgeCompleted?'已增强并回传 PS；现在可回到 PS 点击生成。':'PS 已连接：可继续选择角色/环境、方向、风格库和模型，也可拖入新图片；点击增强后自动回传。'}</div>}
       {/* 顶层：增强 / 反推 */}
       <div className="flex gap-1.5">
         <button className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all bg-foreground text-background">增强</button>
@@ -331,14 +370,85 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
         </div>
       )}
 
+      {/* 项目风格与风格库由整个工作台共享，切换栏目时保持选择 */}
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <span className="text-[11px] text-muted-foreground mr-0.5">项目风格</span>
+          <button
+            onClick={() => setProjectStyleId('')}
+            className={`px-2.5 py-1 rounded-full text-[11px] transition-all ${!projectStyleId ? 'bg-foreground text-background' : 'bg-muted/40 text-muted-foreground hover:bg-muted/70'}`}
+          >默认</button>
+          {customDirs.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setProjectStyleId(item.id)}
+              className={`px-2.5 py-1 rounded-full text-[11px] transition-all ${projectStyleId === item.id ? 'bg-foreground text-background' : 'bg-primary/10 text-primary hover:bg-primary/20'}`}
+            >{item.name}</button>
+          ))}
+          {!compact && (
+            <button
+              onClick={() => setShowCustomForm(!showCustomForm)}
+              className="px-2.5 py-1 rounded-full text-[11px] transition-all flex items-center gap-1 border border-dashed border-border/60 text-muted-foreground hover:bg-muted/40"
+            ><Plus className="w-3 h-3" />新建项目方向</button>
+          )}
+        </div>
+        <button
+          onClick={() => setShowStyleLib(!showStyleLib)}
+          className={`w-full px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all flex items-center justify-center gap-1 ${showStyleLib || selectedStyles.length > 0 ? 'bg-foreground text-background' : 'bg-muted/40 text-muted-foreground hover:bg-muted/70'}`}
+        >
+          <Sparkles className="w-3 h-3" />
+          风格库{selectedStyles.length > 0 ? ` · 已选${selectedStyles.length}项` : ''}
+        </button>
+        {showStyleLib && <StyleLibrary selectedStyles={selectedStyles} onSelect={setSelectedStyles} compact />}
+        {selectedStyles.length > 0 && !showStyleLib && (
+          <div className="flex flex-wrap items-center gap-1 text-[10px] text-primary bg-primary/10 border border-primary/20 rounded-lg px-2 py-1.5">
+            <Sparkles className="w-2.5 h-2.5 shrink-0" /><span className="shrink-0">共享已选：</span>
+            {selectedStyles.map((s) => (
+              <span key={s.id} className="flex items-center gap-0.5 bg-primary/10 rounded px-1 py-0.5">{s.name}<button onClick={() => setSelectedStyles(selectedStyles.filter((x) => x.id !== s.id))}><X className="w-2 h-2" /></button></span>
+            ))}
+            <button onClick={() => setSelectedStyles([])} className="ml-auto text-[9px] text-muted-foreground hover:text-primary">清空</button>
+          </div>
+        )}
+      </div>
+
+      {showCustomForm && !compact && (
+        <CustomDirectionForm
+          group={group}
+          onCreated={() => { setShowCustomForm(false); loadCustom(); }}
+        />
+      )}
+
       {isVideo && videoMode === 'single' ? (
-        <VideoDirector key={restoreKey} onSaved={onSaved} initialContext={restoreCtx} />
+        <VideoDirector key={restoreKey} onSaved={onSaved} initialContext={restoreCtx} sharedStyles={selectedStyles} projectStyle={selectedProjectStyle} />
       ) : isVideo && videoMode === 'batch' ? (
-        <BatchStoryboard />
+        <BatchStoryboard sharedStyles={selectedStyles} projectStyle={selectedProjectStyle} />
       ) : isViewpoint ? (
-        <ViewpointPrompt key={restoreKey} onSaved={onSaved} initialContext={restoreCtx} />
+        <ViewpointPrompt key={restoreKey} onSaved={onSaved} initialContext={restoreCtx} sharedStyles={selectedStyles} projectStyle={selectedProjectStyle} />
       ) : isRepair ? (
-        <LogicRepair key={restoreKey} onSaved={onSaved} initialContext={restoreCtx} />
+        <LogicRepair
+          key={restoreKey}
+          onSaved={onSaved}
+          initialContext={restoreCtx}
+          sharedImages={images}
+          onSharedImagesChange={setImages}
+          sharedContext={rawInput}
+          onSharedContextChange={setRawInput}
+          sharedModel={model}
+          onSharedModelChange={setModel}
+          selectedStyles={selectedStyles}
+          projectStyle={selectedProjectStyle}
+          onBridgeComplete={bridgeSessionId && !bridgeCompleted ? async ({ prompt, prompt_en, prompt_zh }) => {
+            const available = Math.max(0, 6 - bridgeOriginalCount);
+            const newFiles = images.filter((image) => image.file && !image.bridgeOriginal).map((image) => image.file);
+            const compressed = await compressImages(newFiles);
+            const addedImages = await Promise.all(compressed.slice(0, available).map(async (file, index) => ({ name: newFiles[index]?.name || `影词魔方新增图片${index + 1}.webp`, data: await fileDataUrl(file) })));
+            const response = await fetch('/api/local/bridge-session/complete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: bridgeSessionId, prompt, prompt_en, prompt_zh, images: addedImages }) });
+            const completed = await response.json();
+            if (!response.ok) throw new Error(completed.error || '回传 Photoshop 失败');
+            setBridgeCompleted(true);
+            toast({ title: '已回传 Photoshop', description: addedImages.length ? `修复提示词和 ${addedImages.length} 张新增图片已同步` : '修复提示词已填回 PS' });
+          } : null}
+        />
       ) : (
       <>
       {group === 'character' && (
@@ -346,48 +456,6 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
           <Sparkles className="w-3 h-3" />
           好莱坞角色概念设计 Skill 已启用 · 每次增强自动应用
         </div>
-      )}
-      {group === 'character' && (
-        <>
-          <div className="flex gap-1.5">
-            <button
-              onClick={() => setShowStyleLib(!showStyleLib)}
-              className={`flex-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all flex items-center justify-center gap-1 ${
-                showStyleLib || selectedStyles.length > 0 ? 'bg-foreground text-background' : 'bg-muted/40 text-muted-foreground hover:bg-muted/70'
-              }`}
-            >
-              <Sparkles className="w-3 h-3" />
-              风格库{selectedStyles.length > 0 ? ` · 已选${selectedStyles.length}项` : ''}
-            </button>
-          </div>
-          {showStyleLib && (
-            <StyleLibrary
-              selectedStyles={selectedStyles}
-              onSelect={setSelectedStyles}
-              compact
-            />
-          )}
-          {selectedStyles.length > 0 && !showStyleLib && (
-            <div className="flex flex-wrap items-center gap-1 text-[10px] text-primary bg-primary/10 border border-primary/20 rounded-lg px-2 py-1.5">
-              <Sparkles className="w-2.5 h-2.5 shrink-0" />
-              <span className="shrink-0">已选：</span>
-              {selectedStyles.map((s) => (
-                <span key={s.id} className="flex items-center gap-0.5 bg-primary/10 rounded px-1 py-0.5">
-                  {s.name}
-                  <button onClick={() => setSelectedStyles(selectedStyles.filter((x) => x.id !== s.id))} className="hover:text-primary">
-                    <X className="w-2 h-2" />
-                  </button>
-                </span>
-              ))}
-              <button
-                onClick={() => setSelectedStyles([])}
-                className="ml-auto shrink-0 text-[9px] text-muted-foreground hover:text-primary"
-              >
-                清空
-              </button>
-            </div>
-          )}
-        </>
       )}
       {group === 'scene' && (
         <div className="flex items-center gap-1.5 text-[11px] text-sky-600 bg-sky-400/10 border border-sky-400/30 rounded-lg px-2.5 py-1.5">
@@ -433,26 +501,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
             </button>
           </div>
         ))}
-        {!compact && (
-          <button
-            onClick={() => setShowCustomForm(!showCustomForm)}
-            className={`px-2.5 py-1 rounded-full text-[11px] transition-all flex items-center gap-1 border border-dashed border-border/60 text-muted-foreground hover:bg-muted/40 ${showCustomForm ? 'bg-muted/60' : ''}`}
-          >
-            <Plus className="w-3 h-3" />
-            新建项目方向
-          </button>
-        )}
       </div>
-
-      {showCustomForm && !compact && (
-        <CustomDirectionForm
-          group={group}
-          onCreated={() => {
-            setShowCustomForm(false);
-            loadCustom();
-          }}
-        />
-      )}
 
       {viewingDirId && (() => {
         const dir = customDirs.find(d => d.id === viewingDirId);

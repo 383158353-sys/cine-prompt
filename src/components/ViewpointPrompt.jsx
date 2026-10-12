@@ -47,7 +47,7 @@ const PLACEHOLDERS = {
   scene: '描述你的场景（如：雨后夜晚的赛博朋克街道，霓虹灯反射在湿地面…）'
 };
 
-export default function ViewpointPrompt({ onSaved, initialContext }) {
+export default function ViewpointPrompt({ onSaved, initialContext, sharedStyles = [], projectStyle }) {
   const [subject, setSubject] = useState(initialContext?.subject || 'character');
   const [viewType, setViewType] = useState(initialContext?.viewType || 'multi_view');
   const [viewCustom, setViewCustom] = useState(initialContext?.viewCustom || '');
@@ -126,7 +126,9 @@ export default function ViewpointPrompt({ onSaved, initialContext }) {
       const res = await base44.functions.invoke('enhancePrompt', {
         mode: 'sheet', subject, view_type: viewType, view_custom: viewCustom,
         raw_input: desc, file_url: fileUrl, model,
-        target: selectedTarget.label, target_type: selectedTarget.type
+        target: selectedTarget.label, target_type: selectedTarget.type,
+        styles: sharedStyles.map((style) => ({ name: style.name, category: style.category, style_prompt: style.style_prompt })),
+        project_style: projectStyle ? { name: projectStyle.name, system_prompt: projectStyle.system_prompt || '' } : undefined
       });
       const data = res.data;
       // 自动存入提示词库（含用户原始输入）
@@ -189,7 +191,9 @@ export default function ViewpointPrompt({ onSaved, initialContext }) {
       const res = await base44.functions.invoke('enhancePrompt', {
         mode: 'multi_view', subject,
         raw_input: desc, file_url: fileUrl, model,
-        target: selectedTarget.label, target_type: selectedTarget.type
+        target: selectedTarget.label, target_type: selectedTarget.type,
+        styles: sharedStyles.map((style) => ({ name: style.name, category: style.category, style_prompt: style.style_prompt })),
+        project_style: projectStyle ? { name: projectStyle.name, system_prompt: projectStyle.system_prompt || '' } : undefined
       });
       const data = res.data;
       if (data.views && data.views.length > 0) {

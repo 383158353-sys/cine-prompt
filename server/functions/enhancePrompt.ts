@@ -1062,6 +1062,27 @@ export default async function(req) {
     const body = await req.json().catch(() => ({}));
     const mode = (body.mode || 'enhance').toString();
     let rawInput = (body.raw_input || '').toString().trim();
+    const sharedStyles: Array<{ name: string; category: string; style_prompt: string }> = Array.isArray(body.styles)
+      ? body.styles.filter((style: any) => style && (style.name || style.style_prompt)).map((style: any) => ({
+          name: (style.name || '').toString().slice(0, 120),
+          category: (style.category || 'overall').toString().slice(0, 60),
+          style_prompt: (style.style_prompt || '').toString().slice(0, 4000)
+        }))
+      : [];
+    const projectStyle = body.project_style && typeof body.project_style === 'object'
+      ? {
+          name: (body.project_style.name || '').toString().slice(0, 120),
+          system_prompt: (body.project_style.system_prompt || '').toString().slice(0, 6000)
+        }
+      : null;
+    const sharedContextInstruction = [
+      projectStyle?.name || projectStyle?.system_prompt
+        ? `\n\n【项目风格（所有栏目共享）】\n项目风格：${projectStyle.name || '未命名'}${projectStyle.system_prompt ? `\n项目专属要求：${projectStyle.system_prompt}` : ''}\n该风格在角色、环境、视角、逻辑修复和镜头中持续生效；不得覆盖用户明确要求和必须保留的原图内容。`
+        : '',
+      sharedStyles.length
+        ? `\n\n【共享风格库选择】\n${sharedStyles.map((style, index) => `${index + 1}. ${style.name || '未命名'}（${style.category}）${style.style_prompt ? `：${style.style_prompt}` : ''}`).join('\n')}\n将这些选择作为当前任务的可视约束。在逻辑修复中只允许它们影响用户指定的局部，其余区域严格保持原图；在视角和镜头中必须保持风格连续性。`
+        : ''
+    ].join('');
     if (mode !== 'reverse' && mode !== 'sheet' && mode !== 'multi_view' && mode !== 'video_batch' && mode !== 'repair' && mode !== 'style_swap' && !rawInput) return Response.json({ error: '请输入提示词' }, { status: 400 });
 
     // 第一步：自动整理用户输入（修正错字/同音字、清理语音口癖、理顺语序），整理后的文本才喂给增强/反推/视角
@@ -1105,6 +1126,7 @@ export default async function(req) {
         systemPrompt += `\n\n项目专属优化要求（请在基础方向上重点体现）：\n${supplement}`;
       }
     }
+    systemPrompt += sharedContextInstruction;
 
     // 角色方向：所有角色方向均注入好莱坞概念设计 Skill 方法论（单一概念设计提示词）
     // skipSkill 的方向(默认增强)不注入 Skill，按参考图自由增强
@@ -1326,6 +1348,7 @@ export default async function(req) {
       if (repairContext) {
         repairPromptText += `\n\n用户补充的文字描述：${repairContext}`;
       }
+      repairPromptText += sharedContextInstruction;
       repairPromptText += `\n\n请严格以JSON返回，包含title/scene_analysis/repair_prompt_zh/repair_prompt_en/negative_constraints/tags。\n- repair_prompt_zh = 中文修复提示词（可直接复制使用），格式：保持原图……不要改变……只修改以下区域：（根据标注逐一列出修改项）……最终要求……\n- repair_prompt_en = English Repair Prompt\n- negative_constraints = 负向约束（中文）\n- scene_analysis = 中文简述用户标注了哪些区域以及你将如何修复\n- title = 简短中文标题\n- tags = 3-5个中文标签`;
 
       const repairArgs = { prompt: repairPromptText, response_json_schema: REPAIR_SCHEMA, file_urls: repairFileUrls };
@@ -1368,6 +1391,7 @@ export default async function(req) {
 
       const dialoguePreExtract = buildDialoguePreExtract(rawInput);
       let videoPrompt = `${VIDEO_DIRECTOR_SKILL}\n\n用户输入：${rawInput}\n\n目标视频模型：${targetModel}\n该模型的提示词格式要求：${videoModelGuide}${dialogueInstruction}${dialoguePreExtract}`;
+      videoPrompt += sharedContextInstruction;
       if (fileUrls && fileUrls.length > 0) {
         videoPrompt += `\n\n【参考图已提供】用户上传了${fileUrls.length}张参考图。可从图中识别与运动相关的信息（如衣摆随步伐摆动、发丝因转身产生惯性）。禁止输出静态造型描述（服装款式/发型/五官/场景陈设）。若参考图上有手绘标注（红色圆圈、箭头或文字说明），这些标注指明了用户想要重点表现或修改的具体部位——请将标注区域作为重点，参照标注文字理解用户的导演意图。`;
       } else {
@@ -1423,7 +1447,7 @@ export default async function(req) {
         const ctxAfter = shots.slice(i + 1, i + 3).map(s => s.original_prompt || '').filter(Boolean).join(' / ');
 
         const shotDialoguePreExtract = buildDialoguePreExtract(shot.original_prompt || '');
-        let batchPrompt = `${VIDEO_DIRECTOR_SKILL}\n\n用户输入：${shot.original_prompt || ''}\n\n目标视频模型：${targetModel}\n该模型的提示词格式要求：${batchModelGuide}${dialogueInstruction}${shotDialoguePreExtract}`;
+        let batchPrompt = `${VIDEO_DIRECTOR_SKILL}\n\n用户输入：${shot.original_prompt || ''}\n\n目标视频模型：${targetModel}\n该模型的提示词格式要求：${batchModelGuide}${dialogueInstruction}${shotDialoguePreExtract}${sharedContextInstruction}`;
         if (ctxBefore) batchPrompt += `\n\n上下文（前几镜，用于理解"她"等代词指代）：${ctxBefore}`;
         if (ctxAfter) batchPrompt += `\n\n后续镜头：${ctxAfter}`;
         batchPrompt += `\n\n请严格以JSON返回。只翻译当前镜头，不要输出其他镜头的内容。只翻译和具象化用户明确表达的内容，不补全任何未提及维度。`;
@@ -1510,7 +1534,7 @@ export default async function(req) {
       const sheetTarget = `\n\n【目标引擎】优化后的提示词将喂给「${targetLabel}」（${targetType}）。请按该模型已知的最佳提示词格式与语法组织输出。`;
       const descBlock = rawInput ? `${subjectLabel}：${rawInput}` : '（用户仅上传了参考图，未提供文字描述，请基于参考图生成）';
       const sheetArgs = {
-        prompt: `${sheetSystem}${sheetTarget}${sheetFile}\n\n${descBlock}\n\n要求：1) enhanced_prompt 输出英文提示词；2) enhanced_prompt_zh 输出对应中文；3) 简短中文标题(5-12字)；4) 3-5个中文标签。严格以JSON返回。`,
+        prompt: `${sheetSystem}${sharedContextInstruction}${sheetTarget}${sheetFile}\n\n${descBlock}\n\n要求：1) enhanced_prompt 输出英文提示词；2) enhanced_prompt_zh 输出对应中文；3) 简短中文标题(5-12字)；4) 3-5个中文标签。严格以JSON返回。`,
         response_json_schema: SCHEMA
       };
       if (fileUrls) sheetArgs.file_urls = fileUrls;
@@ -1575,7 +1599,7 @@ export default async function(req) {
         const vpSystem = `${VIEWPOINT_SKILL}\n\n本次视角转换任务：基于用户上传的${mvSubjectNoun}参考图，生成「${vp.label}」视角转换提示词。\n聚焦：${vp.focus}。${CINEMATIC_SPECIAL_INSTRUCTION(vp)}\n\n严格要求：\n1. 这是基于上传参考图的视角转换，不是重新创作——enhanced_prompt开头必须明确声明"Based on the uploaded reference image, viewpoint transformation to ${vp.label}"，enhanced_prompt_zh开头必须明确声明"基于上传的参考图进行视角转换：${vp.label}，严格保持与原图一致"。\n2. 必须先从参考图提取并锁定主体/场景/风格/光影/色彩/材质等核心特征，在提示词中明确要求保持100%一致。\n3. 仅改变观察视角与取景，绝不改动主体外貌、服装、场景内容、色调与材质。\n4. 使用"maintain strict consistency / same character / same scene / preserve exactly"等一致性锁定语义。\n5. 按目标引擎语法组织输出。`;
         const vpFile = `\n\n用户上传了${mvSubjectNoun}参考图。这是视角转换的基底——必须严格基于该参考图生成视角转换提示词，最大程度还原原本参考图的质感、材质与每一个细节，保持内容100%一致，仅改变观察视角，不改动主体与场景内容。`;
         const vpArgs = {
-          prompt: `${vpSystem}${mvTarget}${vpFile}\n\n${mvDescBlock}\n\n要求：1) enhanced_prompt 输出英文提示词；2) enhanced_prompt_zh 输出对应中文；3) 简短中文标题(5-12字)；4) 3-5个中文标签。严格以JSON返回。`,
+          prompt: `${vpSystem}${sharedContextInstruction}${mvTarget}${vpFile}\n\n${mvDescBlock}\n\n要求：1) enhanced_prompt 输出英文提示词；2) enhanced_prompt_zh 输出对应中文；3) 简短中文标题(5-12字)；4) 3-5个中文标签。严格以JSON返回。`,
           response_json_schema: SCHEMA
         };
         if (fileUrls) vpArgs.file_urls = fileUrls;

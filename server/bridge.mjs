@@ -1,7 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { entity } from './local-client.mjs';
 import { uploadsDir } from './ai.mjs';
 
 export const BRIDGE_HEADER = 'x-cine-bridge';
@@ -15,7 +14,58 @@ const IMAGE_LIMIT = 14;
 const IMAGE_BYTES_LIMIT = 14 * 1024 * 1024;
 const DATA_URL = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/;
 const EXTENSIONS = {png:'.png',jpeg:'.jpg',webp:'.webp'};
-const PS_PREFIX = '这是 Photoshop 局部改图：图片1 是选区原图，只修改用户要求的部分，其余保持不变；图片2 起是参考图，请在提示词中用「图片N」引用；输出要简洁、可直接给生图模型执行，不要写分析过程。';
+const sessions = new Map();
+let eventSequence = 0;
+let latestEvent = null;
+
+function publish(session) {
+  latestEvent = { sequence: ++eventSequence, sessionId: session.id, state: session.state };
+}
+
+function expireSession(session) {
+  clearTimeout(session.expiryTimer);
+  session.expiryTimer = setTimeout(async () => {
+    sessions.delete(session.id);
+    if(session.state==='waiting')session.reject(Object.assign(new Error('影词魔方联动已超时，请重新点击 PS 的优化按钮'),{status:504}));
+    await Promise.allSettled((session.files || []).map(file => fs.unlink(file.path)));
+  }, 15 * 60 * 1000);
+  session.expiryTimer.unref?.();
+}
+
+export function bridgeActivity(after = 0) {
+  return latestEvent && latestEvent.sequence > Number(after || 0)
+    ? latestEvent
+    : { sequence: eventSequence };
+}
+
+export function getBridgeSession(id) {
+  const session = sessions.get(id);
+  if (!session) throw Object.assign(new Error('联动会话已结束，请从 PS 再次点击优化'), {status:404});
+  return {
+    id:session.id,
+    state:session.state,
+    text:session.text,
+    images:session.images,
+    target:session.target,
+    originalImageCount:session.images.length
+  };
+}
+
+export function completeBridgeSession(input) {
+  const session=sessions.get(input?.id);
+  if(!session)throw Object.assign(new Error('联动会话已结束，请从 PS 再次点击优化'),{status:404});
+  if(session.state!=='waiting')throw Object.assign(new Error('联动会话已经处理'),{status:409});
+  const prompt=typeof input.prompt==='string'?input.prompt.trim():'';
+  if(!prompt)throw Object.assign(new Error('优化结果为空，无法回传 PS'),{status:400});
+  const availableImages=Math.max(0,6-session.images.length);
+  const images=Array.isArray(input.images)?input.images.slice(0,availableImages).map((image,index)=>{
+    if(!image || typeof image.data!=='string' || !DATA_URL.test(image.data) || image.data.length>14*1024*1024)throw Object.assign(new Error(`新增图片${index+1}格式无效或过大`),{status:400});
+    return {name:String(image.name || `影词魔方新增图片${index+1}`).slice(0,150),data:image.data};
+  }):[];
+  const result={prompt,prompt_en:typeof input.prompt_en==='string'?input.prompt_en:'',prompt_zh:typeof input.prompt_zh==='string'?input.prompt_zh:'',images};
+  session.state='complete';session.result=result;publish(session);expireSession(session);session.resolve(result);
+  return {ok:true};
+}
 
 export function bridgeCors(origin) {
   if (!origin || !BRIDGE_ORIGINS.has(origin)) return {};
@@ -49,14 +99,17 @@ export function parseBridgeImages(images) {
   });
 }
 
-export async function optimizeBridge(input,{enhancePrompt,timeoutMs=90000}={}) {
+export async function optimizeBridge(input) {
   const text=typeof input?.text === 'string' ? input.text.trim() : '';
   const images=parseBridgeImages(input?.images || []);
   if (!text && images.length===0) throw Object.assign(new Error('请先提供修改要求或图片'), {status:400});
   const purpose=input?.purpose === 'ps_local_edit' ? 'ps_local_edit' : 'generic';
-  const language=input?.language === 'en' ? 'en' : 'zh';
   const target=typeof input?.target === 'string' && input.target.trim() ? input.target.trim() : 'generic_image';
-  const direction=typeof input?.direction === 'string' && input.direction.trim() ? input.direction.trim() : 'bridge_auto';
+  let resolveResult,rejectResult;
+  const resultPromise=new Promise((resolve,reject)=>{resolveResult=resolve;rejectResult=reject;});
+  const session={id:randomUUID(),state:'receiving',text,images:[],target,result:null,error:'',files:[],resolve:resolveResult,reject:rejectResult};
+  sessions.set(session.id,session);
+  expireSession(session);
   await fs.mkdir(uploadsDir,{recursive:true});
   const written=[];
   try {
@@ -65,36 +118,13 @@ export async function optimizeBridge(input,{enhancePrompt,timeoutMs=90000}={}) {
       await fs.writeFile(path.join(uploadsDir,filename),image.bytes);
       written.push({path:path.join(uploadsDir,filename),url:`/uploads/${filename}`});
     }
-    const requestData={mode:'enhance',raw_input:text || '根据图片完成局部修改',file_urls:written.map(file=>file.url),target,direction};
-    if (purpose === 'ps_local_edit') requestData.system_prompt=PS_PREFIX;
-    const response=await Promise.race([
-      enhancePrompt(new Request('http://127.0.0.1/api/bridge/optimize',{method:'POST',body:JSON.stringify(requestData)})),
-      new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Object.assign(new Error('优化等待超时，请稍后重试'),{status:504})),timeoutMs);timer.unref?.();})
-    ]);
-    const result=await response.json();
-    if (!response.ok || result?.error) throw Object.assign(new Error(result?.error || '提示词优化失败'),{status:response.status || 500});
-    const history=await entity('Prompt').create({
-      title:result.title || text.slice(0,20) || 'PS 局部改图',
-      raw_input:text,
-      content:result.enhanced_prompt || '',
-      content_zh:result.enhanced_prompt_zh || '',
-      category:result.category || '综合提示',
-      direction:result.direction || direction,
-      rating:3,
-      tags:result.tags || [],
-      source:purpose === 'ps_local_edit' ? 'ps' : 'bridge',
-      context:{purpose,target,language,file_urls:written.map(file=>file.url)}
-    });
-    return {
-      prompt:language === 'en' ? (result.enhanced_prompt || result.enhanced_prompt_zh || '') : (result.enhanced_prompt_zh || result.enhanced_prompt || ''),
-      prompt_en:result.enhanced_prompt || '',
-      prompt_zh:result.enhanced_prompt_zh || '',
-      negative:result.negative_prompt || '',
-      title:result.title || '',
-      history_id:history.id
-    };
+    session.files=written;
+    session.images=written.map((file,index)=>({name:images[index].name,url:file.url}));
+    session.state='waiting';
+    publish(session);
+    return await resultPromise;
   } catch(error) {
-    if (!error.status || error.status >= 500) await Promise.allSettled(written.map(file=>fs.unlink(file.path)));
+    if(session.state!=='complete'){session.state='error';session.error=error.message || '提示词优化失败';publish(session);expireSession(session);}
     throw error;
   }
 }

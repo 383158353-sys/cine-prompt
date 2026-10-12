@@ -26,7 +26,7 @@ export function validateSettings(input) {
   return {AI_BASE_URL:baseUrl,AI_MODEL:model,AI_MODEL_GEMINI:optionalModels[0],AI_MODEL_GPT:optionalModels[1],AI_MODEL_CLAUDE:optionalModels[2],AI_API_KEY:apiKey,AI_PROVIDER:provider};
 }
 let saveQueue=Promise.resolve();
-export function saveSettings(input, file=path.resolve('.env.local')) {
+export function saveSettings(input, file=process.env.CINE_SETTINGS_FILE || path.resolve('.env.local')) {
   const values=validateSettings(input);
   const operation=saveQueue.then(async()=>{
     let original='';

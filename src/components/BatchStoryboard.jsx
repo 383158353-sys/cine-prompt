@@ -45,7 +45,7 @@ function toCSV(headers, rows) {
   return lines.join('\n');
 }
 
-export default function BatchStoryboard() {
+export default function BatchStoryboard({ sharedStyles = [], projectStyle }) {
   const [pasteText, setPasteText] = useState('');
   const [headers, setHeaders] = useState([]);
   const [rows, setRows] = useState([]);
@@ -178,7 +178,9 @@ export default function BatchStoryboard() {
           raw_input: prompt,
           target_model: 'auto',
           target_type: 'video',
-          dialogue_optimize: optimizeDialogue
+          dialogue_optimize: optimizeDialogue,
+          styles: sharedStyles.map((style) => ({ name: style.name, category: style.category, style_prompt: style.style_prompt })),
+          project_style: projectStyle ? { name: projectStyle.name, system_prompt: projectStyle.system_prompt || '' } : undefined
         });
         const d = res.data;
         if (!d || d.error) throw new Error(d?.error || '处理失败');

@@ -78,12 +78,22 @@ test('local application integration with a mock OpenAI-compatible provider', asy
     assert.match(image,/^\/uploads\//);
     assert.equal((await fetch(base+image)).status,200);
   });
-  await t.test('bridge validates images, optimizes in order and writes PS history',async()=>{
+  await t.test('bridge opens the full workbench, waits for enhancement and returns prompt plus new images',async()=>{
     const data='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aPhkAAAAASUVORK5CYII=';
-    const response=await fetch(base+'/api/bridge/optimize',{method:'POST',headers:bridgeHeaders,body:JSON.stringify({text:'把衣服改成红色丝绒',images:[{name:'选区.png',data},{name:'参考.png',data}],purpose:'ps_local_edit',target:'banana2',language:'zh'})});
-    const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.ok(result.prompt);assert.ok(result.prompt_en);assert.ok(result.prompt_zh);assert.ok(result.history_id);
-    const last=calls.at(-1);assert.equal(last.body.messages.at(-1).content.filter(part=>part.type==='image_url').length,2);assert.match(last.body.messages.at(-1).content[0].text,/Photoshop 局部改图/);
-    const saved=(await ent('Prompt','get',result.history_id)).data;assert.equal(saved.source,'ps');assert.equal(saved.raw_input,'把衣服改成红色丝绒');assert.equal(saved.context.file_urls.length,2);
+    const llmCallsBefore=calls.length;
+    const pending=fetch(base+'/api/bridge/optimize',{method:'POST',headers:bridgeHeaders,body:JSON.stringify({text:'把衣服改成红色丝绒',images:[{name:'选区.png',data},{name:'参考.png',data}],purpose:'ps_local_edit',target:'banana2',language:'zh'})});
+    let activity;
+    for(let attempt=0;attempt<50;attempt++){
+      activity=await (await fetch(base+'/api/bridge/activity?after=0',{headers:bridgeHeaders})).json();
+      if(activity.sessionId&&activity.state==='waiting')break;
+      await new Promise(resolve=>setTimeout(resolve,10));
+    }
+    assert.ok(activity.sessionId);assert.equal(activity.state,'waiting');assert.equal(calls.length,llmCallsBefore,'bridge must not optimize outside the workbench');
+    const sessionResponse=await fetch(base+`/api/local/bridge-session?id=${encodeURIComponent(activity.sessionId)}`);const session=await sessionResponse.json();
+    assert.equal(session.state,'waiting');assert.equal(session.images.length,2);assert.deepEqual(session.images.map(item=>item.name),['选区.png','参考.png']);assert.equal(session.text,'把衣服改成红色丝绒');
+    const completion=await fetch(base+'/api/local/bridge-session/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:activity.sessionId,prompt:'优化后的中文提示词',prompt_en:'optimized prompt',prompt_zh:'优化后的中文提示词',images:[{name:'新增参考.png',data}]})});
+    assert.equal(completion.status,200);assert.equal((await completion.json()).ok,true);
+    const response=await pending;const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.equal(result.prompt,'优化后的中文提示词');assert.equal(result.images.length,1);assert.equal(result.images[0].name,'新增参考.png');
     const tooMany=await fetch(base+'/api/bridge/optimize',{method:'POST',headers:bridgeHeaders,body:JSON.stringify({text:'x',images:Array(15).fill({name:'x.png',data})})});
     assert.equal(tooMany.status,400);
     const invalid=await fetch(base+'/api/bridge/optimize',{method:'POST',headers:bridgeHeaders,body:JSON.stringify({text:'x',images:[{name:'x.gif',data:'data:image/gif;base64,R0lGODlh'}]})});
@@ -91,10 +101,11 @@ test('local application integration with a mock OpenAI-compatible provider', asy
   });
   for(const mode of ['enhance','reverse','repair','sheet','viewpoint','style_swap','video_director']) {
     await t.test(`${mode} reaches compatible provider and returns original fields`,async()=>{
-      const result=await fn('enhancePrompt',{mode,raw_input:'一个角色站在雨中',file_urls:[image],model:'gpt',styles:[{name:'短发',category:'hair',style_prompt:'short hair'}]});
+      const result=await fn('enhancePrompt',{mode,raw_input:'一个角色站在雨中',file_urls:[image],model:'gpt',styles:[{name:'短发',category:'hair',style_prompt:'short hair'}],project_style:{name:'梦核咖啡',system_prompt:'统一低饱和梦核色调'}});
       assert.equal(result.status,200,JSON.stringify(result.data));assert.ok(mode === 'repair' ? result.data.repair_prompt_en : result.data.enhanced_prompt);
       const last=calls.at(-1);assert.equal(last.url,'/chat/completions');assert.equal(last.body.model,'mock-gpt');
       assert.match(last.body.messages.at(-1).content.find(c=>c.type==='image_url').image_url.url,/^data:image\/png;base64,/);
+      if(['enhance','repair','sheet','video_director'].includes(mode)){const textPart=last.body.messages.at(-1).content.find(c=>c.type==='text')?.text||'';assert.match(textPart,/梦核咖啡/);assert.match(textPart,/短发/);}
     });
   }
   await t.test('all fourteen viewpoints return results',async()=>{
