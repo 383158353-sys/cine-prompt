@@ -1,0 +1,18 @@
+{
+  "name": "ColorPalette",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string", "description": "色卡名称" },
+    "scope": { "type": "string", "enum": ["character", "environment"], "description": "严格隔离的色卡作用域" },
+    "source_image": { "type": "string", "description": "来源参考图" },
+    "palette": { "type": "array", "items": { "type": "string" }, "description": "按主次顺序保存的 HEX 颜色" },
+    "colors": { "type": "array", "items": { "type": "object" }, "description": "颜色名称、HEX、RGB、占比和色彩角色" },
+    "analysis": { "type": "object", "description": "色温、明度、饱和度、对比度、色相关系及描述" },
+    "sampling_points": { "type": "array", "items": { "type": "object" }, "default": [] },
+    "color_count": { "type": "number" },
+    "variation": { "type": "number" },
+    "created_at": { "type": "string" },
+    "updated_at": { "type": "string" }
+  },
+  "required": ["name", "scope", "source_image", "palette", "color_count", "variation"]
+}

@@ -2,11 +2,13 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sparkles, Search, Check, X, Image as ImageIcon, Upload, Loader2, Plus } from 'lucide-react';
+import ColorPaletteLibrary from '@/components/ColorPaletteLibrary';
 
 const CATEGORIES = [
   { key: 'clothing', label: '服装', icon: '👗' },
   { key: 'makeup', label: '化妆', icon: '💄' },
-  { key: 'hair', label: '发型', icon: '✂' }
+  { key: 'hair', label: '发型', icon: '✂' },
+  { key: 'palette', label: '色卡', icon: '🎨' }
 ];
 
 const GENDERS = [
@@ -15,10 +17,12 @@ const GENDERS = [
   { key: 'male', label: '男' }
 ];
 
-export default function StyleLibrary({ selectedStyles = [], onSelect, compact }) {
+export default function StyleLibrary({ selectedStyles = [], onSelect, compact, paletteScope = 'character', selectedCharacterPalette, selectedEnvironmentPalette, onSelectPalette = (_value, _scope) => {} }) {
   const [styles, setStyles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState('hair');
+  const [paletteView,setPaletteView]=useState(paletteScope);
+  useEffect(()=>setPaletteView(paletteScope),[paletteScope]);
   const [gender, setGender] = useState('all');
   const [search, setSearch] = useState('');
   const [dragOver, setDragOver] = useState(false);
@@ -120,6 +124,15 @@ export default function StyleLibrary({ selectedStyles = [], onSelect, compact })
           </button>
         ))}
       </div>
+
+      {category === 'palette' ? (
+        <div className="space-y-2">
+          <div className="flex gap-1 text-[10px]">
+            {[['character','人物'],['environment','环境 / 视角场景']].map(([scope,label])=><button key={scope} type="button" onClick={()=>setPaletteView(scope)} className={`flex-1 rounded-md px-2 py-1 ${paletteView===scope?'bg-foreground text-background':'bg-muted/40 text-muted-foreground'}`}>{label}</button>)}
+          </div>
+          <ColorPaletteLibrary scope={paletteView} selectedPalette={paletteView==='character'?selectedCharacterPalette:selectedEnvironmentPalette} onSelect={palette=>onSelectPalette(palette,paletteView)} compact={compact} />
+        </div>
+      ) : <>
 
       {/* 文本输入 + 图片上传按钮 */}
       <div className="flex gap-1 items-center">
@@ -249,6 +262,7 @@ export default function StyleLibrary({ selectedStyles = [], onSelect, compact })
           )}
         </ScrollArea>
       </div>
+      </>}
     </div>
   );
 }

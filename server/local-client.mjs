@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { dataDir, InvokeLLM, GenerateImage } from './ai.mjs';
 
 export const localUser = {id:'local-user', full_name:'本地用户', email:'local@localhost', role:'user'};
-const allowed = new Set(['Prompt','Direction','StyleLibrary']);
+const allowed = new Set(['Prompt','Direction','StyleLibrary','ColorPalette']);
 let queue = Promise.resolve();
 async function transaction(fn, write = false) {
   const operation = queue.then(async () => {

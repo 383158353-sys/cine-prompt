@@ -20,6 +20,8 @@ import PromptOutput from '@/components/PromptOutput';
 import ResultBoundary from '@/components/ResultBoundary';
 import { toast } from '@/components/ui/use-toast';
 import { compressImages } from '@/lib/compressImage';
+import { createPaletteImage } from '@/lib/paletteImage';
+import { PROJECT_STYLES, projectStylePayload } from '../../shared/project-styles.mjs';
 import { urlToFile } from '@/lib/urlToFile';
 
 function extractError(e) {
@@ -53,8 +55,9 @@ function fileDataUrl(file) {
   return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('新增图片读取失败'));reader.readAsDataURL(file);});
 }
 
-export default function PromptEnhancer({ onSaved, compact = false }) {
+export default function PromptEnhancer({ onSaved, compact = false, active = true, bridgeEnabled = true, onTaskStatus }) {
   const [group, setGroup] = useState('character');
+  const [viewpointSubject, setViewpointSubject] = useState('character');
   const [direction, setDirection] = useState('character_default');
   const [model, setModel] = useState('automatic');
   const [targetKey, setTargetKey] = useState('imagine2');
@@ -72,6 +75,12 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
   const [result, setResult] = useState(null);
   const [rated, setRated] = useState(false);
   const [selectedStyles, setSelectedStyles] = useState([]);
+  const [selectedCharacterPalette, setSelectedCharacterPalette] = useState(null);
+  const [selectedEnvironmentPalette, setSelectedEnvironmentPalette] = useState(null);
+  const selectPalette = (palette, scope) => {
+    (scope === 'character' ? setSelectedCharacterPalette : setSelectedEnvironmentPalette)(palette);
+  };
+
   const [projectStyleId, setProjectStyleId] = useState('');
   const [bridgeSessionId,setBridgeSessionId]=useState('');
   const [bridgeOriginalCount,setBridgeOriginalCount]=useState(0);
@@ -97,6 +106,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
   const [restoreCtx, setRestoreCtx] = useState(null);
   const [restoreKey, setRestoreKey] = useState(0);
   useEffect(() => {
+    if(!bridgeEnabled)return;
     const params = new URLSearchParams(location.search);
     const rid = params.get('restore');
     if (!rid) return;
@@ -107,6 +117,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
       if (ctx.mode === 'enhance' || ctx.mode === 'style_swap') {
         setMode('enhance');
         if (ctx.group) setGroup(ctx.group);
+        if (ctx.subject) setViewpointSubject(ctx.subject);
         if (ctx.direction) setDirection(ctx.direction);
         if (ctx.model) setModel(ctx.model);
         if (ctx.target) setTargetKey(ctx.target);
@@ -117,6 +128,10 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
         setMode('reverse');
       } else if (ctx.mode === 'viewpoint') {
         setGroup('viewpoint');
+        if (ctx.desc) setRawInput(ctx.desc);
+        if (ctx.model) setModel(ctx.model);
+        const restoredViewImages = ctx.file_urls?.length ? ctx.file_urls : (ctx.refImage_url ? [ctx.refImage_url] : []);
+        if (restoredViewImages.length) setImages(restoredViewImages.map((url) => ({ file: null, preview: url, url })));
       } else if (ctx.mode === 'video') {
         setGroup('video');
         if (ctx.videoMode) setVideoMode(ctx.videoMode);
@@ -129,6 +144,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
   }, [location.search]);
 
   useEffect(()=>{
+    if(!bridgeEnabled)return;
     const id=new URLSearchParams(location.search).get('bridge');
     if(!id)return;
     fetch(`/api/local/bridge-session?id=${encodeURIComponent(id)}`).then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error);return data;}).then(session=>{
@@ -136,7 +152,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
       setRawInput(session.text || '');
       setImages((session.images || []).map(image=>({file:null,preview:image.url,url:image.url,bridgeOriginal:true,name:image.name})));
     }).catch(error=>toast({title:'PS 联动读取失败',description:error.message,variant:'destructive'}));
-  },[location.search]);
+  },[location.search,bridgeEnabled]);
 
   // 合并内置 + 自定义方向
   const builtInStyles = STYLES[group] || [];
@@ -152,8 +168,22 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
     }));
   const allStyles = [...builtInStyles, ...customStyles];
 
-  const selected = allStyles.find((s) => s.key === direction) || allStyles[0];
-  const selectedProjectStyle = customDirs.find((item) => item.id === projectStyleId) || null;
+  const selectedProjectStyle = [...PROJECT_STYLES, ...customDirs].find((item) => item.id === projectStyleId) || null;
+  const projectBase = selectedProjectStyle?.base_style;
+  const selected = group === 'character'
+    ? { key: projectBase === 'realistic' ? 'character_realistic' : projectBase === 'concept' ? 'character_concept' : 'character_default' }
+    : group === 'scene' ? { key: 'scene_default' } : allStyles.find((s) => s.key === direction) || allStyles[0];
+  const paletteScope = group === 'character' || (group === 'viewpoint' && viewpointSubject === 'character') ? 'character' : 'environment';
+  const selectedPalette = paletteScope === 'character' ? selectedCharacterPalette : selectedEnvironmentPalette;
+  useEffect(() => {
+    setImages(current => {
+      const regular=current.filter(image=>!image.paletteScope);
+      const reference=selectedPalette?createPaletteImage(selectedPalette):null;
+      const previous=current.find(image=>image.paletteScope===paletteScope);
+      if(current.length===regular.length+(reference?1:0) && (!reference || (previous?.paletteId===reference.paletteId && previous?.preview===reference.preview)))return current;
+      return reference?[...regular,reference]:regular;
+    });
+  }, [paletteScope,selectedPalette]);
 
   const selectGroup = (g) => {
     setGroup(g);
@@ -167,7 +197,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
     setImages((prev) => [...prev, ...arr.map((f) => ({ file: f, preview: URL.createObjectURL(f) }))]);
   };
 
-  useImagePaste(addFiles);
+  useImagePaste(addFiles,active && mode==='enhance' && !['repair','viewpoint','video'].includes(group));
 
   const onPickFile = (e) => { addFiles(e.target.files); if (fileInput.current) fileInput.current.value = ''; };
 
@@ -185,11 +215,12 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
 
   const handleEnhance = async () => {
     // 优化中再次点击 = 取消
-    if (loading) { cancelRef.current = true; return; }
+    if (loading) { cancelRef.current = true; onTaskStatus?.('idle'); return; }
     const hasStyleSwap = selectedStyles.length > 0 && group === 'character' && images.length > 0;
     if (!rawInput.trim() && !hasStyleSwap && images.length === 0) return;
     cancelRef.current = false;
     setLoading(true);
+    onTaskStatus?.('running');
     setResult(null);
     setRated(false);
     try {
@@ -205,7 +236,8 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
           uploaded = uploads.map((u) => u.file_url);
           if(bridgeSessionId){
             const available=Math.max(0,6-bridgeOriginalCount);
-            bridgeAddedImages=await Promise.all(compressed.slice(0,available).map(async(file,index)=>({name:newFiles[index]?.name || `影词魔方新增图片${index+1}.webp`,data:await fileDataUrl(file)})));
+            if (compressed.length > available) throw new Error(`PS 最多接收 6 张图片，当前还可添加 ${available} 张。请删除多余参考图后再增强。`);
+            bridgeAddedImages=await Promise.all(compressed.map(async(file,index)=>({name:newFiles[index]?.name || `影词魔方新增图片${index+1}.webp`,data:await fileDataUrl(file)})));
           }
         }
         fileUrls = [...uploaded, ...existingUrls];
@@ -228,11 +260,15 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
           style_prompt: s.style_prompt
         }));
       }
-      if (selectedProjectStyle) {
-        payload.project_style = {
-          name: selectedProjectStyle.name,
-          system_prompt: selectedProjectStyle.system_prompt || ''
+      if (selectedPalette) {
+        payload.color_palette = {
+          id: selectedPalette.id, name: selectedPalette.name, scope: selectedPalette.scope,
+          palette: selectedPalette.palette, colors: selectedPalette.colors,
+          analysis: selectedPalette.analysis, variation: selectedPalette.variation
         };
+      }
+      if (selectedProjectStyle) {
+        payload.project_style = projectStylePayload(selectedProjectStyle);
       }
       if (selected.isCustom) {
         payload.base_direction = selected.base_direction;
@@ -260,7 +296,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
           direction: data.direction || selected.key,
           rating: 3,
           tags: data.tags || [],
-          context: { mode: useStyleSwap ? 'style_swap' : 'enhance', group, direction: selected.key, model, target: targetKey, raw_input: rawInput, file_urls: bridgeSessionId ? undefined : fileUrls, image_count:bridgeSessionId ? fileUrls?.length || 0 : undefined, style_names: selectedStyles.map((s) => s.name), project_style_id: projectStyleId || undefined }
+          context: { mode: useStyleSwap ? 'style_swap' : 'enhance', group, direction: selected.key, model, target: targetKey, raw_input: rawInput, file_urls: bridgeSessionId ? undefined : fileUrls, image_count:bridgeSessionId ? fileUrls?.length || 0 : undefined, style_names: selectedStyles.map((s) => s.name), project_style_id: projectStyleId || undefined, color_palette_id: selectedPalette?.id, color_palette_name: selectedPalette?.name }
         });
         savedId = saved.id;
         onSaved?.();
@@ -270,6 +306,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
       if (cancelRef.current) return; // 已取消，不显示结果
       const finalPrompt = buildFinalPrompt(data);
       setResult({ ...data, _savedId: savedId, _fileUrls: fileUrls, final_prompt: finalPrompt.en, final_prompt_zh: finalPrompt.zh });
+      onTaskStatus?.('done');
       if(bridgeSessionId && !bridgeCompleted){
         const response=await fetch('/api/local/bridge-session/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:bridgeSessionId,prompt:finalPrompt.zh || data.enhanced_prompt_zh || finalPrompt.en || data.enhanced_prompt,prompt_en:finalPrompt.en || data.enhanced_prompt || '',prompt_zh:finalPrompt.zh || data.enhanced_prompt_zh || '',images:bridgeAddedImages})});
         const completed=await response.json();if(!response.ok)throw new Error(completed.error || '回传 Photoshop 失败');
@@ -285,6 +322,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
     } catch (e) {
       if (cancelRef.current) return; // 取消导致的错误不提示
       console.error('增强失败', e);
+      onTaskStatus?.('error');
       toast({ title: '增强失败', description: extractError(e), variant: 'destructive' });
     } finally {
       setLoading(false);
@@ -330,7 +368,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
           <button onClick={() => setMode('enhance')} className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all bg-muted/50 text-muted-foreground hover:bg-muted">增强</button>
           <button className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all bg-foreground text-background">反推</button>
         </div>
-        <ReversePrompt key={restoreKey} onSaved={onSaved} initialContext={restoreCtx} />
+        <ReversePrompt key={restoreKey} onSaved={onSaved} initialContext={restoreCtx} active={active} onTaskStatus={onTaskStatus} />
       </div>
     );
   }
@@ -370,6 +408,10 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
         </div>
       )}
 
+      {group === 'viewpoint' && <div className="flex gap-1.5">
+        {[{ key: 'character', label: '人物' }, { key: 'scene', label: '场景' }].map((subject) => <button key={subject.key} onClick={() => setViewpointSubject(subject.key)} className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${viewpointSubject === subject.key ? 'bg-foreground text-background' : 'bg-muted/50 text-muted-foreground hover:bg-muted'}`}>{subject.label}</button>)}
+      </div>}
+
       {/* 项目风格与风格库由整个工作台共享，切换栏目时保持选择 */}
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap gap-1.5 items-center">
@@ -378,18 +420,19 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
             onClick={() => setProjectStyleId('')}
             className={`px-2.5 py-1 rounded-full text-[11px] transition-all ${!projectStyleId ? 'bg-foreground text-background' : 'bg-muted/40 text-muted-foreground hover:bg-muted/70'}`}
           >默认</button>
-          {customDirs.map((item) => (
+          {[...PROJECT_STYLES, ...customDirs].map((item) => (
             <button
               key={item.id}
               onClick={() => setProjectStyleId(item.id)}
               className={`px-2.5 py-1 rounded-full text-[11px] transition-all ${projectStyleId === item.id ? 'bg-foreground text-background' : 'bg-primary/10 text-primary hover:bg-primary/20'}`}
             >{item.name}</button>
           ))}
+          {selectedProjectStyle && customDirs.some((item) => item.id === projectStyleId) && <button type="button" onClick={() => setViewingDirId(projectStyleId)} title="编辑项目风格" className="h-5 w-5 flex items-center justify-center rounded-full text-muted-foreground hover:bg-muted"><Eye className="h-3 w-3" /></button>}
           {!compact && (
             <button
               onClick={() => setShowCustomForm(!showCustomForm)}
               className="px-2.5 py-1 rounded-full text-[11px] transition-all flex items-center gap-1 border border-dashed border-border/60 text-muted-foreground hover:bg-muted/40"
-            ><Plus className="w-3 h-3" />新建项目方向</button>
+            ><Plus className="w-3 h-3" />新建项目风格</button>
           )}
         </div>
         <button
@@ -399,7 +442,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
           <Sparkles className="w-3 h-3" />
           风格库{selectedStyles.length > 0 ? ` · 已选${selectedStyles.length}项` : ''}
         </button>
-        {showStyleLib && <StyleLibrary selectedStyles={selectedStyles} onSelect={setSelectedStyles} compact />}
+        {showStyleLib && <StyleLibrary selectedStyles={selectedStyles} onSelect={setSelectedStyles} paletteScope={paletteScope} selectedCharacterPalette={selectedCharacterPalette} selectedEnvironmentPalette={selectedEnvironmentPalette} onSelectPalette={selectPalette} compact />}
         {selectedStyles.length > 0 && !showStyleLib && (
           <div className="flex flex-wrap items-center gap-1 text-[10px] text-primary bg-primary/10 border border-primary/20 rounded-lg px-2 py-1.5">
             <Sparkles className="w-2.5 h-2.5 shrink-0" /><span className="shrink-0">共享已选：</span>
@@ -413,20 +456,49 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
 
       {showCustomForm && !compact && (
         <CustomDirectionForm
-          group={group}
-          onCreated={() => { setShowCustomForm(false); loadCustom(); }}
+          onCreated={(saved) => { setShowCustomForm(false); loadCustom(); if (saved?.id) setProjectStyleId(saved.id); }}
         />
       )}
 
+      {viewingDirId && (() => {
+        const dir = customDirs.find(d => d.id === viewingDirId);
+        if (!dir) return null;
+        return (
+          <DirectionDetail
+            direction={dir}
+            onClose={() => setViewingDirId(null)}
+            onChanged={() => { loadCustom(); setViewingDirId(null); }}
+          />
+        );
+      })()}
+
       {isVideo && videoMode === 'single' ? (
-        <VideoDirector key={restoreKey} onSaved={onSaved} initialContext={restoreCtx} sharedStyles={selectedStyles} projectStyle={selectedProjectStyle} />
+        <VideoDirector key={restoreKey} onSaved={onSaved} initialContext={restoreCtx} sharedStyles={selectedStyles} projectStyle={selectedProjectStyle} active={active} onTaskStatus={onTaskStatus} />
       ) : isVideo && videoMode === 'batch' ? (
         <BatchStoryboard sharedStyles={selectedStyles} projectStyle={selectedProjectStyle} />
       ) : isViewpoint ? (
-        <ViewpointPrompt key={restoreKey} onSaved={onSaved} initialContext={restoreCtx} sharedStyles={selectedStyles} projectStyle={selectedProjectStyle} />
+        <ViewpointPrompt
+          sharedSubject={viewpointSubject} active={active} onTaskStatus={onTaskStatus}
+          key={restoreKey}
+          onSaved={onSaved}
+          initialContext={restoreCtx}
+          sharedImages={images}
+          onSharedImagesChange={setImages}
+          sharedContext={rawInput}
+          onSharedContextChange={setRawInput}
+          sharedModel={model}
+          onSharedModelChange={setModel}
+          sharedStyles={selectedStyles}
+          projectStyle={selectedProjectStyle}
+          selectedCharacterPalette={selectedCharacterPalette}
+          selectedEnvironmentPalette={selectedEnvironmentPalette}
+          onSelectedCharacterPaletteChange={(palette) => selectPalette(palette, 'character')}
+          onSelectedEnvironmentPaletteChange={(palette) => selectPalette(palette, 'environment')}
+        />
       ) : isRepair ? (
         <LogicRepair
           key={restoreKey}
+          active={active} onTaskStatus={onTaskStatus}
           onSaved={onSaved}
           initialContext={restoreCtx}
           sharedImages={images}
@@ -437,11 +509,14 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
           onSharedModelChange={setModel}
           selectedStyles={selectedStyles}
           projectStyle={selectedProjectStyle}
+          selectedPalette={selectedEnvironmentPalette}
+          onSelectedPaletteChange={(palette) => selectPalette(palette, 'environment')}
           onBridgeComplete={bridgeSessionId && !bridgeCompleted ? async ({ prompt, prompt_en, prompt_zh }) => {
             const available = Math.max(0, 6 - bridgeOriginalCount);
             const newFiles = images.filter((image) => image.file && !image.bridgeOriginal).map((image) => image.file);
             const compressed = await compressImages(newFiles);
-            const addedImages = await Promise.all(compressed.slice(0, available).map(async (file, index) => ({ name: newFiles[index]?.name || `影词魔方新增图片${index + 1}.webp`, data: await fileDataUrl(file) })));
+            if (compressed.length > available) throw new Error(`PS 最多接收 6 张图片，当前还可添加 ${available} 张。请删除多余参考图后再增强。`);
+            const addedImages = await Promise.all(compressed.map(async (file, index) => ({ name: newFiles[index]?.name || `影词魔方新增图片${index + 1}.webp`, data: await fileDataUrl(file) })));
             const response = await fetch('/api/local/bridge-session/complete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: bridgeSessionId, prompt, prompt_en, prompt_zh, images: addedImages }) });
             const completed = await response.json();
             if (!response.ok) throw new Error(completed.error || '回传 Photoshop 失败');
@@ -464,7 +539,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
         </div>
       )}
       {/* 风格选择（内置 + 我的方向） */}
-      <div className="flex flex-wrap gap-1.5">
+      {group === 'video' && <div className="flex flex-wrap gap-1.5">
         {builtInStyles.map((s) => (
           <button
             key={s.key}
@@ -501,19 +576,7 @@ export default function PromptEnhancer({ onSaved, compact = false }) {
             </button>
           </div>
         ))}
-      </div>
-
-      {viewingDirId && (() => {
-        const dir = customDirs.find(d => d.id === viewingDirId);
-        if (!dir) return null;
-        return (
-          <DirectionDetail
-            direction={dir}
-            onClose={() => setViewingDirId(null)}
-            onChanged={() => { loadCustom(); setViewingDirId(null); }}
-          />
-        );
-      })()}
+      </div>}
 
       {/* 参考图：可拖拽上传 */}
       <div

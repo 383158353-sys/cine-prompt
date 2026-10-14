@@ -16,7 +16,6 @@ import ResetPassword from '@/pages/ResetPassword';
 import History from '@/pages/History';
 import Settings from '@/pages/Settings';
 import InstallPhotoshop from '@/pages/InstallPhotoshop';
-import DesktopControls from '@/components/DesktopControls';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -70,7 +69,6 @@ function App() {
           <AuthenticatedApp />
         </Router>
         <Toaster />
-        <DesktopControls />
       </QueryClientProvider>
     </AuthProvider>
   )

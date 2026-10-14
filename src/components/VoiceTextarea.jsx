@@ -3,13 +3,18 @@ import { Textarea } from '@/components/ui/textarea';
 import { Mic, MicOff } from 'lucide-react';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { toast } from '@/components/ui/use-toast';
+let lastVoiceError = { message: '', at: 0 };
 
 // 带原生语音输入的文本框：右下角麦克风按钮，语音实时转写追加到文本
 // 按钮始终显示：浏览器不支持时置灰提示，识别出错时弹出原因（如未授权麦克风）
 export default function VoiceTextarea({ value, onChange, placeholder, className }) {
   const voice = useSpeechRecognition({
     onResult: (text) => onChange(text),
-    onError: (msg) => toast({ title: msg, variant: 'destructive' }),
+    onError: (msg) => {
+      if(lastVoiceError.message===msg && Date.now()-lastVoiceError.at<4000)return;
+      lastVoiceError={message:msg,at:Date.now()};
+      toast({ title: msg, variant: 'destructive' });
+    },
   });
 
   const handleClick = () => {

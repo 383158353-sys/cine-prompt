@@ -1,3 +1,4 @@
+import { projectStylePayload } from '../../shared/project-styles.mjs';
 import React, { useState, useRef, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
@@ -61,7 +62,7 @@ function PromptBlock({ title, text, accent }) {
   );
 }
 
-export default function LogicRepair({ onSaved, initialContext, sharedImages, onSharedImagesChange, sharedContext, onSharedContextChange, sharedModel, onSharedModelChange, selectedStyles = [], projectStyle, onBridgeComplete }) {
+export default function LogicRepair({ onSaved, initialContext, sharedImages, onSharedImagesChange, sharedContext, onSharedContextChange, sharedModel, onSharedModelChange, selectedStyles = [], projectStyle, selectedPalette, onSelectedPaletteChange = (_value) => {}, onBridgeComplete, active = true, onTaskStatus }) {
   const [localImages, setLocalImages] = useState(() => initialContext?.file_urls?.map((url) => ({ file: null, preview: url, url })) || []);
   const [dragOver, setDragOver] = useState(false);
   const [localContext, setLocalContext] = useState(initialContext?.context || '');
@@ -92,7 +93,7 @@ export default function LogicRepair({ onSaved, initialContext, sharedImages, onS
     setImages((prev) => [...prev, ...arr.map((f) => ({ file: f, preview: URL.createObjectURL(f) }))]);
   };
 
-  useImagePaste(addFiles);
+  useImagePaste(addFiles,active);
 
   const onPickFile = (e) => { addFiles(e.target.files); if (fileInput.current) fileInput.current.value = ''; };
   const onDrop = (e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); };
@@ -109,6 +110,7 @@ export default function LogicRepair({ onSaved, initialContext, sharedImages, onS
   const handleRepair = async () => {
     if (images.length === 0) return;
     setLoading(true);
+    onTaskStatus?.('running');
     setResult(null);
     try {
       const newFiles = images.filter((img) => img.file).map((img) => img.file);
@@ -126,7 +128,12 @@ export default function LogicRepair({ onSaved, initialContext, sharedImages, onS
         file_urls,
         model,
         styles: selectedStyles.map((style) => ({ name: style.name, category: style.category, style_prompt: style.style_prompt })),
-        project_style: projectStyle ? { name: projectStyle.name, system_prompt: projectStyle.system_prompt || '' } : undefined
+        project_style: projectStylePayload(projectStyle),
+        color_palette: selectedPalette ? {
+          id: selectedPalette.id, name: selectedPalette.name, scope: selectedPalette.scope,
+          palette: selectedPalette.palette, colors: selectedPalette.colors,
+          analysis: selectedPalette.analysis, variation: selectedPalette.variation
+        } : undefined
       });
       const data = res?.data ?? res;
       if (!data || data.error) throw new Error(data?.error || '修复失败');
@@ -140,11 +147,12 @@ export default function LogicRepair({ onSaved, initialContext, sharedImages, onS
           direction: 'repair',
           rating: 3,
           tags: data.tags || [],
-          context: { mode: 'repair', context, model, file_urls, style_names: selectedStyles.map((style) => style.name), project_style_id: projectStyle?.id }
+          context: { mode: 'repair', context, model, file_urls, style_names: selectedStyles.map((style) => style.name), project_style_id: projectStyle?.id, color_palette_id: selectedPalette?.id, color_palette_name: selectedPalette?.name }
         });
         onSaved?.();
       } catch {}
       setResult(data);
+      onTaskStatus?.('done');
       if (onBridgeComplete) {
         await onBridgeComplete({
           prompt: data.repair_prompt_zh || data.repair_prompt_en || '',
@@ -160,6 +168,7 @@ export default function LogicRepair({ onSaved, initialContext, sharedImages, onS
       }
     } catch (e) {
       console.error('逻辑修复失败', e);
+      onTaskStatus?.('error');
       toast({ title: '修复失败', description: extractError(e), variant: 'destructive' });
     } finally {
       setLoading(false);

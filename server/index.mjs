@@ -11,10 +11,10 @@ import { publicSettings, saveSettings, testSettings, listModels } from './settin
 import { authorizeBridge, bridgeActivity, bridgeCors, completeBridgeSession, getBridgeSession, optimizeBridge } from './bridge.mjs';
 
 const functions = {};
-for (const name of ['enhancePrompt','analyzeStyleImage','generateStyleThumbnails','parseStoryboard']) {
+for (const name of ['enhancePrompt','analyzeStyleImage','analyzeColorPalette','generateStyleThumbnails','parseStoryboard']) {
   const source = await fs.readFile(new URL(`./functions/${name}.ts`, import.meta.url), 'utf8');
   const code = (await transform(source, {loader:'ts',format:'esm',target:'node22'})).code;
-  // Transpile beside the runtime adapter so relative imports resolve normally.
+  // Runtime adapters live beside this entrypoint so their relative imports resolve here.
   const output = new URL(`./.${name}.mjs`, import.meta.url);
   await fs.writeFile(output, code);
   functions[name] = (await import(output.href)).default;
@@ -51,6 +51,18 @@ const server = http.createServer(async(req,res) => {
       } catch(error) {return bridgeJson(req,res,{error:error.message || '桥接请求失败'},error.status || 400);}
     }
     if (req.headers.origin && ![`http://127.0.0.1:${port}`,`http://localhost:${port}`].includes(req.headers.origin)) return json(res,{error:'不允许跨站请求'},403);
+    if(url.pathname.startsWith('/api/local/voice/') && ['GET','POST'].includes(req.method)) {
+      const action=url.pathname.slice('/api/local/voice/'.length);
+      if(!['health','start','status','stop'].includes(action)) return json(res,{error:'语音接口不存在'},404);
+      const target=new URL(`http://127.0.0.1:17402/${action}`);
+      if(action==='status'||action==='stop') {
+        for(const key of ['id','cursor'])if(url.searchParams.has(key))target.searchParams.set(key,url.searchParams.get(key));
+      }
+      try {
+        const upstream=await fetch(target,{method:req.method,headers:{'X-PS-Local-Voice':'1'},signal:AbortSignal.timeout(5000)});
+        return json(res,await upstream.json(),upstream.status);
+      } catch {return json(res,{message:'本机中文语音服务未启动。请重新启动影词魔方。'},503);}
+    }
     if(url.pathname==='/api/local/bridge-session' && req.method==='GET') return json(res,getBridgeSession(url.searchParams.get('id')));
     if(url.pathname==='/api/local/bridge-session/complete' && req.method==='POST') {
       if(!req.headers['content-type']?.startsWith('application/json')) return json(res,{error:'需要 JSON 请求'},415);

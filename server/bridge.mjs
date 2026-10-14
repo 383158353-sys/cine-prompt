@@ -58,7 +58,8 @@ export function completeBridgeSession(input) {
   const prompt=typeof input.prompt==='string'?input.prompt.trim():'';
   if(!prompt)throw Object.assign(new Error('优化结果为空，无法回传 PS'),{status:400});
   const availableImages=Math.max(0,6-session.images.length);
-  const images=Array.isArray(input.images)?input.images.slice(0,availableImages).map((image,index)=>{
+  if(Array.isArray(input.images) && input.images.length>availableImages)throw Object.assign(new Error(`PS 图片数量超限，还可添加 ${availableImages} 张；未回传，请减少图片后重试`),{status:400});
+  const images=Array.isArray(input.images)?input.images.map((image,index)=>{
     if(!image || typeof image.data!=='string' || !DATA_URL.test(image.data) || image.data.length>14*1024*1024)throw Object.assign(new Error(`新增图片${index+1}格式无效或过大`),{status:400});
     return {name:String(image.name || `影词魔方新增图片${index+1}`).slice(0,150),data:image.data};
   }):[];

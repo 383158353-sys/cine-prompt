@@ -27,6 +27,7 @@ test('API settings persist locally, never disclose keys, and test without saving
   assert.throws(()=>validateSettings({provider:'compatible',baseUrl:'https://other.test/v1',apiKey:'',model:'m'}),/重新填写/);
   for(const baseUrl of ['ftp://example.test','https://user:password@example.test','https://example.test?key=x','http://example.test']) assert.throws(()=>validateSettings({provider:'compatible',baseUrl,apiKey:'dummy',model:'m'}));
   assert.throws(()=>validateSettings({provider:'compatible',baseUrl:saved.baseUrl,apiKey:'bad\nvalue',model:'m'}));
+  assert.equal(validateSettings({provider:'compatible',baseUrl:'https://api.lk888.ai',apiKey:'dummy',model:'m'}).AI_BASE_URL,'https://api.lk888.ai/v1');
   assert.throws(()=>validateSettings({provider:'gemini',baseUrl:'https://example.test/v1',apiKey:'dummy',model:'m'}),/Google 官方/);
   let status=200, content='OK', received;
   const mock=http.createServer(async(req,res)=>{

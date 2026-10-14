@@ -31,8 +31,9 @@ test('local application integration with a mock OpenAI-compatible provider', asy
   upstream.listen(0,'127.0.0.1');await once(upstream,'listening');
   const probe=http.createServer();probe.listen(0,'127.0.0.1');await once(probe,'listening');const port=probe.address().port;await new Promise(r=>probe.close(r));
   const app=spawn(process.execPath,['server/index.mjs'],{env:{...process.env,AI_PROVIDER:'compatible',AI_BASE_URL:`http://127.0.0.1:${upstream.address().port}`,AI_API_KEY:'test-only-token',AI_MODEL:'mock-vision',AI_MODEL_GPT:'mock-gpt',AI_IMAGE_MODEL:'mock-image',LOCAL_DATA_DIR:temp,PORT:String(port)},stdio:['ignore','pipe','pipe']});
+  let startupError='';app.stderr.on('data',chunk=>{startupError+=chunk.toString();});
   t.after(async()=>{app.kill();await new Promise(r=>upstream.close(r));});
-  await Promise.race([once(app.stdout,'data'),once(app,'exit').then(()=>{throw new Error('app exited before startup');}),new Promise((_,reject)=>{const timer=setTimeout(()=>reject(new Error('startup timeout')),20000);timer.unref();})]);
+  await Promise.race([once(app.stdout,'data'),once(app,'exit').then(()=>{throw new Error('app exited before startup: '+startupError);}),new Promise((_,reject)=>{const timer=setTimeout(()=>reject(new Error('startup timeout')),20000);timer.unref();})]);
   const base=`http://127.0.0.1:${port}`;
   const rpc=async(data)=>{const r=await fetch(base+'/api/local/rpc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});return {status:r.status,data:await r.json()};};
   const fn=(name,data)=>rpc({kind:'function',name,data});
@@ -108,6 +109,33 @@ test('local application integration with a mock OpenAI-compatible provider', asy
       if(['enhance','repair','sheet','video_director'].includes(mode)){const textPart=last.body.messages.at(-1).content.find(c=>c.type==='text')?.text||'';assert.match(textPart,/梦核咖啡/);assert.match(textPart,/短发/);}
     });
   }
+  await t.test('project styles separate subject requirements in actual model requests',async()=>{
+    const project_style={name:'共享项目',system_prompt:'共同暖色调',character_prompt:'人物专属蓝色外套',scene_prompt:'场景专属白色石材'};
+    for(const request of [{direction:'character_default'},{direction:'scene_default'},{mode:'sheet',subject:'scene'}]) {
+      const result=await fn('enhancePrompt',{raw_input:'根据参考图优化',file_urls:[image],project_style,...request});
+      assert.equal(result.status,200,JSON.stringify(result.data));
+      const content=calls.at(-1).body.messages.at(-1).content;
+      const text=typeof content==='string'?content:content.filter(part=>part.type==='text').map(part=>part.text).join('\n');
+      assert.match(text,/共同暖色调/);
+      if(request.direction==='character_default'){assert.match(text,/人物专属蓝色外套/);assert.doesNotMatch(text,/场景专属白色石材/);}
+      else {assert.match(text,/场景专属白色石材/);assert.doesNotMatch(text,/人物专属蓝色外套/);}
+    }
+    const repair=await fn('enhancePrompt',{mode:'repair',raw_input:'只修复人物的衣服',file_urls:[image],project_style});
+    assert.equal(repair.status,200);
+    const text=calls.at(-1).body.messages.at(-1).content.find(part=>part.type==='text').text;
+    assert.match(text,/根据图片、用户要求和标注自动识别/);
+    assert.match(text,/不得因选择项目风格而重做全图/);
+  });
+  await t.test('selected palette reaches scene viewpoints and appears in the returned prompt',async()=>{
+    const palette={id:'shared-scene',name:'薄雾海岸',scope:'environment',palette:['#236A73','#D8E2DF'],colors:[{name:'主色',hex:'#236A73',percentage:70,role:'Primary'},{name:'辅色',hex:'#D8E2DF',percentage:30,role:'Secondary'}]};
+    const result=await fn('enhancePrompt',{mode:'sheet',subject:'scene',raw_input:'换视角',file_urls:[image],color_palette:palette});
+    assert.equal(result.status,200,JSON.stringify(result.data));
+    assert.match(result.data.enhanced_prompt_zh,/薄雾海岸.*#236A73 70%/);
+    const content=calls.at(-1).body.messages.at(-1).content;
+    const text=typeof content==='string'?content:content.filter(part=>part.type==='text').map(part=>part.text).join('\n');
+    assert.match(text,/薄雾海岸/);
+    assert.match(text,/#236A73/);
+  });
   await t.test('all fourteen viewpoints return results',async()=>{
     const result=await fn('enhancePrompt',{mode:'multi_view',file_urls:[image]});
     assert.equal(result.status,200);assert.equal(result.data.views.length,14);assert.ok(result.data.views.every(v=>v.enhanced_prompt && !v.error));
@@ -127,8 +155,9 @@ test('local application integration with a mock OpenAI-compatible provider', asy
     assert.equal(result.status,200);assert.deepEqual(result.data.shots.map(s=>s.shot_id),['one','two']);assert.ok(result.data.shots.every(s=>s.enhanced_prompt));
   });
   await t.test('image/text style analysis and thumbnail generation',async()=>{
-    for(const input of [{file_urls:[image],category:'hair'},{text:'短发',category:'hair'}]) {
+    for(const input of [{file_urls:[image],category:'hair'},{text:'短发',category:'hair'},{text:'低饱和青橙配色',category:'palette'}]) {
       const result=await fn('analyzeStyleImage',input);assert.equal(result.status,200);assert.ok(result.data.results[0].style_prompt);assert.ok(result.data.results[0].thumbnail_url);
+      assert.equal(result.data.results[0].category,input.category);
     }
     await ent('StyleLibrary','bulkCreate',[{name:'短发',style_prompt:'short hair'}]);
     const result=await fn('generateStyleThumbnails',{});assert.equal(result.data.success,1);

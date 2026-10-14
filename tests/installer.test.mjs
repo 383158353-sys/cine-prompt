@@ -22,11 +22,16 @@ test('desktop installer bundles the PS plugin and keeps local data on uninstall'
   assert.equal(pkg.build.win.artifactName,'CinePrompt-Photoshop-Windows.exe');
   assert.equal(pkg.build.nsis.oneClick,true);
   assert.equal(pkg.build.nsis.deleteAppDataOnUninstall,false);
+  assert.ok(pkg.build.files.includes('shared/**/*'));
   assert.ok(pkg.build.extraResources.some(item=>item.to==='ps-plugin'));
+  assert.ok(pkg.build.extraResources.some(item=>item.to==='ps-companion'));
+  const packager=fs.readFileSync(path.join(root,'scripts/build-desktop-installer.ps1'),'utf8');
+  assert.match(packager,/voice-server\.cjs/);
   const main=fs.readFileSync(path.join(root,'desktop/main.cjs'),'utf8');
   assert.match(main,/setAlwaysOnTop/);
   assert.match(main,/bridge\/activity/);
   assert.match(main,/UXP.*Plugins.*External/s);
+  assert.match(main,/startPhotoshopHelper/);
 });
 
 test('PowerShell installer sources stay ASCII for Windows PowerShell 5.1', () => {

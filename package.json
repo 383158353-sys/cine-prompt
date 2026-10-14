@@ -119,6 +119,7 @@
     "files": [
       "dist/**/*",
       "server/**/*",
+      "shared/**/*",
       "desktop/**/*",
       "public/brand-icon.png",
       "package.json",
@@ -128,6 +129,10 @@
       {
         "from": "desktop/package/ps-plugin",
         "to": "ps-plugin"
+      },
+      {
+        "from": "desktop/package/ps-companion",
+        "to": "ps-companion"
       }
     ],
     "win": {

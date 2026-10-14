@@ -1,4 +1,6 @@
 import { createClientFromRequest } from './local-client.mjs';
+import { buildProjectStyleInstruction } from '../shared/project-styles.mjs';
+import { applyColorPaletteToPrompt, buildColorPaletteInstruction, normalizeColorPalette } from '../shared/color-palettes.mjs';
 
 // 各目标模型的提示词格式指引（让目标模型选择真正起作用，而非摆设）
 const MODEL_GUIDE: Record<string, string> = {
@@ -1069,19 +1071,16 @@ export default async function(req) {
           style_prompt: (style.style_prompt || '').toString().slice(0, 4000)
         }))
       : [];
-    const projectStyle = body.project_style && typeof body.project_style === 'object'
-      ? {
-          name: (body.project_style.name || '').toString().slice(0, 120),
-          system_prompt: (body.project_style.system_prompt || '').toString().slice(0, 6000)
-        }
-      : null;
+    const requestedPalette = normalizeColorPalette(body.color_palette, body.color_palette?.scope);
+    const paletteSharedInstruction = !['sheet', 'repair', 'style_swap'].includes(mode)
+      ? buildColorPaletteInstruction(requestedPalette, requestedPalette?.scope)
+      : '';
     const sharedContextInstruction = [
-      projectStyle?.name || projectStyle?.system_prompt
-        ? `\n\n【项目风格（所有栏目共享）】\n项目风格：${projectStyle.name || '未命名'}${projectStyle.system_prompt ? `\n项目专属要求：${projectStyle.system_prompt}` : ''}\n该风格在角色、环境、视角、逻辑修复和镜头中持续生效；不得覆盖用户明确要求和必须保留的原图内容。`
-        : '',
+      buildProjectStyleInstruction(body.project_style, { mode, subject: body.subject, group: body.group, direction: body.direction }),
       sharedStyles.length
         ? `\n\n【共享风格库选择】\n${sharedStyles.map((style, index) => `${index + 1}. ${style.name || '未命名'}（${style.category}）${style.style_prompt ? `：${style.style_prompt}` : ''}`).join('\n')}\n将这些选择作为当前任务的可视约束。在逻辑修复中只允许它们影响用户指定的局部，其余区域严格保持原图；在视角和镜头中必须保持风格连续性。`
-        : ''
+        : '',
+      paletteSharedInstruction
     ].join('');
     if (mode !== 'reverse' && mode !== 'sheet' && mode !== 'multi_view' && mode !== 'video_batch' && mode !== 'repair' && mode !== 'style_swap' && !rawInput) return Response.json({ error: '请输入提示词' }, { status: 400 });
 
@@ -1151,6 +1150,9 @@ export default async function(req) {
     if (isScene) {
       systemPrompt = `${SCENE_SKILL}\n\n${systemPrompt}`;
     }
+    const paletteScope = dirGroup === 'scene' ? 'environment' : dirGroup === 'character' ? 'character' : '';
+    const activePalette = paletteScope ? normalizeColorPalette(body.color_palette, paletteScope) : null;
+    const paletteInstruction = paletteScope ? buildColorPaletteInstruction(activePalette, paletteScope) : '';
 
     // 参考图（视觉理解）
     const fileUrls = Array.isArray(body.file_urls) ? body.file_urls : (body.file_url ? [body.file_url.toString()] : null);
@@ -1345,6 +1347,7 @@ export default async function(req) {
 
       const repairContext = (body.raw_input || '').toString().trim();
       let repairPromptText = `${PRODUCTION_DESIGN_REPAIR_SKILL}\n\n用户上传了一张场景图，并在图上用红色圆圈/椭圆标注了需要修复的错误区域，可能还附有红色文字说明。请根据用户的标注生成精准的局部修复提示词。\n\n标注说明：\n- 红色圆圈/椭圆 = 用户标记的需要修复的错误区域\n- 红色文字 = 用户对该区域的修改说明\n\n请根据图中标注的区域和文字说明，生成精准的局部修复提示词。遵循最小修改原则——只修复用户标注的区域，保持其余部分完全不变。`;
+      const repairPalette = normalizeColorPalette(body.color_palette, 'environment');
       if (repairContext) {
         repairPromptText += `\n\n用户补充的文字描述：${repairContext}`;
       }
@@ -1365,12 +1368,13 @@ export default async function(req) {
 
       return Response.json({
         title: repairResult.title,
-        repair_prompt_zh: repairResult.repair_prompt_zh || '',
-        repair_prompt_en: repairResult.repair_prompt_en || '',
+        repair_prompt_zh: applyColorPaletteToPrompt(repairResult.repair_prompt_zh || '', repairPalette, 'environment', 'zh'),
+        repair_prompt_en: applyColorPaletteToPrompt(repairResult.repair_prompt_en || '', repairPalette, 'environment', 'en'),
         scene_analysis: repairResult.scene_analysis || '',
         negative_constraints: repairResult.negative_constraints || '',
         tags: repairResult.tags || [],
         cleaned_input: repairContext,
+        color_palette: repairPalette,
         mode: 'repair'
       });
     }
@@ -1533,8 +1537,11 @@ export default async function(req) {
 
       const sheetTarget = `\n\n【目标引擎】优化后的提示词将喂给「${targetLabel}」（${targetType}）。请按该模型已知的最佳提示词格式与语法组织输出。`;
       const descBlock = rawInput ? `${subjectLabel}：${rawInput}` : '（用户仅上传了参考图，未提供文字描述，请基于参考图生成）';
+      const sheetPaletteScope = subject === 'scene' ? 'environment' : 'character';
+      const sheetPalette = normalizeColorPalette(body.color_palette, sheetPaletteScope);
+      const sheetPaletteInstruction = buildColorPaletteInstruction(sheetPalette, sheetPaletteScope);
       const sheetArgs = {
-        prompt: `${sheetSystem}${sharedContextInstruction}${sheetTarget}${sheetFile}\n\n${descBlock}\n\n要求：1) enhanced_prompt 输出英文提示词；2) enhanced_prompt_zh 输出对应中文；3) 简短中文标题(5-12字)；4) 3-5个中文标签。严格以JSON返回。`,
+        prompt: `${sheetSystem}${sharedContextInstruction}${sheetPaletteInstruction}${sheetTarget}${sheetFile}\n\n${descBlock}\n\n要求：1) enhanced_prompt 输出英文提示词；2) enhanced_prompt_zh 输出对应中文；3) 简短中文标题(5-12字)；4) 3-5个中文标签。严格以JSON返回。`,
         response_json_schema: SCHEMA
       };
       if (fileUrls) sheetArgs.file_urls = fileUrls;
@@ -1542,10 +1549,11 @@ export default async function(req) {
       const sResult = await base44.asServiceRole.integrations.Core.InvokeLLM(sheetArgs);
       return Response.json({
         title: sResult.title,
-        enhanced_prompt: enforceMjVersion(sResult.enhanced_prompt),
-        enhanced_prompt_zh: sResult.enhanced_prompt_zh,
+        enhanced_prompt: applyColorPaletteToPrompt(enforceMjVersion(sResult.enhanced_prompt), sheetPalette, sheetPaletteScope, 'en'),
+        enhanced_prompt_zh: applyColorPaletteToPrompt(sResult.enhanced_prompt_zh, sheetPalette, sheetPaletteScope, 'zh'),
         tags: sResult.tags || [],
         cleaned_input: rawInput,
+        color_palette: sheetPalette,
         category: categoryLabel,
         subject,
         view_type: viewType,
@@ -1609,8 +1617,8 @@ export default async function(req) {
           return {
             view_type: vp.view_type, label: vp.label, group: vp.group,
             title: r.title || vp.label,
-            enhanced_prompt: enforceMjVersion(r.enhanced_prompt),
-            enhanced_prompt_zh: r.enhanced_prompt_zh || '',
+            enhanced_prompt: applyColorPaletteToPrompt(enforceMjVersion(r.enhanced_prompt), requestedPalette, mvSubject === 'scene' ? 'environment' : 'character', 'en'),
+            enhanced_prompt_zh: applyColorPaletteToPrompt(r.enhanced_prompt_zh || '', requestedPalette, mvSubject === 'scene' ? 'environment' : 'character', 'zh'),
             tags: r.tags || []
           };
         } catch (e) {
@@ -1651,12 +1659,17 @@ export default async function(req) {
         : (body.style_prompt ? [{ name: (body.style_name || '').toString(), category: (body.style_category || 'overall').toString(), style_prompt: body.style_prompt.toString() }] : []);
       if (stylesArr.length === 0) return Response.json({ error: '请选择风格模板' }, { status: 400 });
 
-      const CATEGORY_LABELS: Record<string, string> = { overall: '总体形象', clothing: '服装', makeup: '化妆', hair: '发型' };
+      const CATEGORY_LABELS: Record<string, string> = { overall: '总体形象', clothing: '服装', makeup: '化妆', hair: '发型', palette: '色卡', color: '色卡', colour: '色卡', color_palette: '色卡', colour_palette: '色卡' };
       const CATEGORY_FOCUS: Record<string, string> = {
         overall: '总体形象——替换角色的整体造型风格（服装/发型/配饰/气质综合），但保持人物身份（脸型/五官/身材比例）不变',
         clothing: '服装——仅替换角色的服装款式/材质/颜色/搭配，保持发型/妆容/面部/配饰/身材/姿势不变',
         makeup: '化妆——仅替换角色的妆容（底妆/眼妆/唇妆/眉形/腮红/修容），保持发型/服装/面部骨相/身材不变',
-        hair: '发型——仅替换角色的发型（发色/发型样式/长度/刘海/造型），保持面部五官/妆容/服装/配饰不变'
+        hair: '发型——仅替换角色的发型（发色/发型样式/长度/刘海/造型），保持面部五官/妆容/服装/配饰不变',
+        palette: '色卡——仅应用选定的主色、辅助色、强调色及其比例、饱和度和色温关系，保持人物身份、构图、造型、材质、光影和未指定内容不变',
+        color: '色卡——仅应用选定的主色、辅助色、强调色及其比例、饱和度和色温关系，保持人物身份、构图、造型、材质、光影和未指定内容不变',
+        colour: '色卡——仅应用选定的主色、辅助色、强调色及其比例、饱和度和色温关系，保持人物身份、构图、造型、材质、光影和未指定内容不变',
+        color_palette: '色卡——仅应用选定的主色、辅助色、强调色及其比例、饱和度和色温关系，保持人物身份、构图、造型、材质、光影和未指定内容不变',
+        colour_palette: '色卡——仅应用选定的主色、辅助色、强调色及其比例、饱和度和色温关系，保持人物身份、构图、造型、材质、光影和未指定内容不变'
       };
 
       const partsList = stylesArr.map((s) => CATEGORY_LABELS[s.category] || s.category).join(' + ');
@@ -1682,6 +1695,7 @@ export default async function(req) {
 
       swapPromptText += `${swapTargetInstruction}${swapImageInstruction}\n\n【输出要求】生成前，务必先执行完整的叙事驱动设计推演——\n第1步 语义锁定：提取参考图主体身份(脸型/五官/身材比例)为LOCKED不得修改，提取用户选定风格模板的特征为服装/发型/妆容的指定要求，提取用户补充描述的意图为额外增强要求；\n第2步 叙事核心：根据参考图主体与风格替换后的整体气质，判断人物身份/状态/观众第一眼读到什么；\n第3步 视觉命题：形成一句话内部视觉命题；\n第4步 从叙事推演视觉：从身份/世界观推导主导形状语言、轮廓、身体比例、面部特征(保持与参考图一致)、服装系统(使用风格库替换后的服装)、CMF材质矩阵(主色60%+辅色30%+强调色10%)、发型(使用风格库替换后的发型)、妆容(使用风格库替换后的妆容)、道具、标志性特征(1-3个)、审美矛盾；\n第5步 设计优先级：将所有设计信息分为S/A/B/C四级，最终Prompt主要使用S+A，少量B，删除C。\n给出尽量精准、具体、非通用的描述（严禁套话与笼统形容词），再据思考结果填充提示词。\n严格按四模块结构输出，只输出一条概念设计提示词（不拆分概念设计/电影剧照两套）。\nenhanced_prompt=角色概念设计/设计立绘(Concept Design Sheet/Turnaround)英文工业级工程提示词，按重要性排序(表现媒介→角色身份→叙事核心→主要视觉印象→身体比例→Silhouette→Shape Language→Iconic Features→Costume(使用风格库替换后的服装)→Colour System→Material→Props→Trace & Wear→Pose→Camera→Lighting→Background→Rendering Quality)，按模板[Subject+Core Shape Language], full body character concept design sheet, neutral A-pose, turnaround reference, cinematic production design, detailed CMF callouts, authentic [Materials & Textures], [Narrative Wear & Tear], clean solid color background (pure white/black/gray, no clutter/props/environment), even high-definition studio lighting, soft uniform key+fill light, minimal shadows, every body part razor-sharp and clearly visible, ultra-detailed skin texture and fabric details, 8k resolution, octane render, photorealistic concept art masterpiece --ar 16:9 --raw --v 8.2填充并替换占位符为实际内容；\nenhanced_prompt_zh=中文完整角色设计Prompt(可直接用于生图，不是分析报告)；\ncompact_prompt_en=精简版英文Prompt(保留角色身份/核心轮廓/Shape Language/标志性特征/Costume/CMF/展示形式，删除非必要解释)；\nnegative_prompt=英文负向提示(根据用户设定动态生成，参考avoid random accessories/avoid excessive armor/avoid meaningless cybernetic elements/avoid generic AI beauty face/avoid overdesign等，只在相关时使用)；\nsemantic_lock=语义锁定摘要(中文列出：参考图主体身份为LOCKED + 用户选定风格模板的替换要求 + 用户补充描述的增强意图，均不可修改)；\ndesign_thesis=角色视觉命题(中文一句话)；\niconic_features=1-3个标志性视觉特征(中文)；\ncolour_palette=色彩系统数组(每个颜色含name/hex/percentage/role，主色60-70%+辅助色20-30%+强调色≤10%)；\nanalysis=中文Markdown完整设计档案分析(模块一概念升华与设计档案+模块二多维视图资产拆解，须明确说明：哪些部位来自风格库替换、哪些部位保持参考图不变、用户描述如何驱动整体增强)，呈现从叙事到视觉的完整推演链路；\ntitle=简短中文标题(5-12字)；tags=3-5个中文标签。严格以JSON返回。`;
 
+      if (paletteInstruction) swapPromptText += paletteInstruction;
       const swapArgs = { prompt: swapPromptText, response_json_schema: HOLLYWOOD_SCHEMA, file_urls: swapFileUrls };
       if (model) swapArgs.model = model;
 
@@ -1696,8 +1710,8 @@ export default async function(req) {
 
       return Response.json({
         title: swapResult.title,
-        enhanced_prompt: enforceMjVersion(swapResult.enhanced_prompt),
-        enhanced_prompt_zh: swapResult.enhanced_prompt_zh,
+        enhanced_prompt: applyColorPaletteToPrompt(enforceMjVersion(swapResult.enhanced_prompt), activePalette, paletteScope, 'en'),
+        enhanced_prompt_zh: applyColorPaletteToPrompt(swapResult.enhanced_prompt_zh, activePalette, paletteScope, 'zh'),
         compact_prompt_en: enforceMjVersion(swapResult.compact_prompt_en || ''),
         negative_prompt: swapResult.negative_prompt || '',
         semantic_lock: swapResult.semantic_lock || '',
@@ -1734,8 +1748,8 @@ export default async function(req) {
 
     const responseData = {
       title: result.title,
-      enhanced_prompt: enforceMjVersion(result.enhanced_prompt),
-      enhanced_prompt_zh: result.enhanced_prompt_zh,
+      enhanced_prompt: applyColorPaletteToPrompt(enforceMjVersion(result.enhanced_prompt), activePalette, paletteScope, 'en'),
+      enhanced_prompt_zh: applyColorPaletteToPrompt(result.enhanced_prompt_zh, activePalette, paletteScope, 'zh'),
       tags: result.tags || [],
       cleaned_input: rawInput,
       category,

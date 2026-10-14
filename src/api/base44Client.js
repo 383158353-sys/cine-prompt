@@ -20,7 +20,7 @@ const goHome = () => window.location.assign('/');
 /** @returns {Promise<{access_token?: string}>} */
 const localOnly = async (..._args) => {throw new Error('本地版无需注册、密码或第三方登录，请直接打开首页');};
 export const base44 = {
-  entities:Object.fromEntries(['Prompt','Direction','StyleLibrary'].map(name => [name,Object.fromEntries(['list','filter','get','create','bulkCreate','update','delete'].map(action=>[action,(...args)=>rpc({kind:'entity',name,action,args})]))])),
+  entities:Object.fromEntries(['Prompt','Direction','StyleLibrary','ColorPalette'].map(name => [name,Object.fromEntries(['list','filter','get','create','bulkCreate','update','delete'].map(action=>[action,(...args)=>rpc({kind:'entity',name,action,args})]))])),
   functions:{invoke:async(name,data)=>({data:await rpc({kind:'function',name,data})})},
   integrations:{Core:{UploadFile:async({file})=>{const form=new FormData();form.append('file',await compressImage(file));return request('/api/local/upload',{method:'POST',body:form});}}},
   auth:{me:()=>request('/api/local/user'),isAuthenticated:async()=>true,logout:goHome,redirectToLogin:goHome,loginViaEmailPassword:localOnly,loginWithProvider:localOnly,register:localOnly,verifyOtp:localOnly,resendOtp:localOnly,resetPasswordRequest:localOnly,resetPassword:localOnly,setToken:(..._args)=>{}}

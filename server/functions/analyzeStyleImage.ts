@@ -4,6 +4,11 @@ const CATEGORY_LABELS: Record<string, string> = {
   hair: '发型',
   makeup: '化妆',
   clothing: '服装',
+  palette: '色卡/配色方案',
+  color: '色卡/配色方案',
+  colour: '色卡/配色方案',
+  color_palette: '色卡/配色方案',
+  colour_palette: '色卡/配色方案',
   overall: '总体形象'
 };
 
@@ -45,7 +50,9 @@ export default async function(req: Request): Promise<Response> {
       let thumbnailUrl = '';
       try {
         const imgRes = await base44.asServiceRole.integrations.Core.GenerateImage({
-          prompt: `A professional close-up portrait photo showing ${styleRes.style_prompt}, ${categoryLabel} style reference, clean neutral background, studio lighting, high quality, detailed, photorealistic`
+          prompt: category === 'palette'
+            ? `A professional color palette swatch board showing ${styleRes.style_prompt}, clean grid, accurate color relationships, neutral background, no text, high quality`
+            : `A professional close-up portrait photo showing ${styleRes.style_prompt}, ${categoryLabel} style reference, clean neutral background, studio lighting, high quality, detailed, photorealistic`
         });
         thumbnailUrl = imgRes.url || '';
       } catch {}

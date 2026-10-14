@@ -51,7 +51,7 @@ const REVERSE_CATEGORIES = [
   },
 ];
 
-export default function ReversePrompt({ onSaved, initialContext }) {
+export default function ReversePrompt({ onSaved, initialContext, active = true, onTaskStatus }) {
   const [images, setImages] = useState(() => initialContext?.file_urls?.map((url) => ({ file: null, preview: url, url })) || []);
   const [dragOver, setDragOver] = useState(false);
   const [category, setCategory] = useState(() => {
@@ -80,7 +80,7 @@ export default function ReversePrompt({ onSaved, initialContext }) {
     setImages((prev) => [...prev, ...arr.map((f) => ({ file: f, preview: URL.createObjectURL(f) }))]);
   };
 
-  useImagePaste(addFiles);
+  useImagePaste(addFiles,active);
 
   const onPickFile = (e) => { addFiles(e.target.files); if (fileInput.current) fileInput.current.value = ''; };
   const onDrop = (e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); };
@@ -97,6 +97,7 @@ export default function ReversePrompt({ onSaved, initialContext }) {
   const handleReverse = async () => {
     if (images.length === 0) return;
     setLoading(true);
+    onTaskStatus?.('running');
     setResult(null);
     setSaveOpen(false);
     try {
@@ -129,6 +130,7 @@ export default function ReversePrompt({ onSaved, initialContext }) {
         onSaved?.();
       } catch {}
       setResult(data);
+      onTaskStatus?.('done');
       try {
         const copyText = `${data.enhanced_prompt_zh || ''}\n\n${data.enhanced_prompt}`;
         await navigator.clipboard.writeText(copyText.trim());
@@ -138,6 +140,7 @@ export default function ReversePrompt({ onSaved, initialContext }) {
       }
     } catch (e) {
       console.error('反推失败', e);
+      onTaskStatus?.('error');
       toast({ title: '反推失败', description: extractError(e), variant: 'destructive' });
     } finally {
       setLoading(false);

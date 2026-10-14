@@ -1,3 +1,4 @@
+import { projectStylePayload } from '../../shared/project-styles.mjs';
 import React, { useState, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
@@ -21,7 +22,7 @@ function extractError(e) {
   return e?.message || '未知错误';
 }
 
-export default function VideoDirector({ onSaved, initialContext, sharedStyles = [], projectStyle }) {
+export default function VideoDirector({ onSaved, initialContext, sharedStyles = [], projectStyle, active = true, onTaskStatus }) {
   const [rawInput, setRawInput] = useState(initialContext?.raw_input || '');
   const [targetModel, setTargetModel] = useState(initialContext?.targetModel || 'auto');
   const [model, setModel] = useState(initialContext?.model || 'automatic');
@@ -40,7 +41,7 @@ export default function VideoDirector({ onSaved, initialContext, sharedStyles = 
     setImages((prev) => [...prev, ...arr.map((f) => ({ file: f, preview: URL.createObjectURL(f) }))]);
   };
 
-  useImagePaste(addFiles);
+  useImagePaste(addFiles,active);
 
   const onPickFile = (e) => { addFiles(e.target.files); if (fileInput.current) fileInput.current.value = ''; };
   const onDrop = (e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); };
@@ -57,6 +58,7 @@ export default function VideoDirector({ onSaved, initialContext, sharedStyles = 
   const handleEnhance = async () => {
     if (!rawInput.trim() && images.length === 0) return;
     setLoading(true);
+    onTaskStatus?.('running');
     setResult(null);
     console.log('[VideoDirector] sending mode=video_director, raw_input:', rawInput);
     try {
@@ -80,7 +82,7 @@ export default function VideoDirector({ onSaved, initialContext, sharedStyles = 
         file_urls: fileUrls,
         dialogue_optimize: optimizeDialogue,
         styles: sharedStyles.map((style) => ({ name: style.name, category: style.category, style_prompt: style.style_prompt })),
-        project_style: projectStyle ? { name: projectStyle.name, system_prompt: projectStyle.system_prompt || '' } : undefined
+        project_style: projectStylePayload(projectStyle)
       });
       const data = res.data;
       if (!data || data.error) throw new Error(data?.error || '增强失败');
@@ -100,11 +102,13 @@ export default function VideoDirector({ onSaved, initialContext, sharedStyles = 
         onSaved?.();
       } catch {}
       setResult(data);
+      onTaskStatus?.('done');
       try {
         await navigator.clipboard.writeText(data.enhanced_prompt);
         toast({ title: '已自动复制英文Prompt' });
       } catch {}
     } catch (e) {
+      onTaskStatus?.('error');
       toast({ title: '增强失败', description: extractError(e), variant: 'destructive' });
     } finally {
       setLoading(false);

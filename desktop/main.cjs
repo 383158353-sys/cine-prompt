@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const PORT = 5173;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 let serverProcess;
+let photoshopHelperProcess;
 let mainWindow;
 let tray;
 let eventCursor = 0;
@@ -50,6 +51,14 @@ function startServer() {
   });
 }
 
+function startPhotoshopHelper() {
+  if(!app.isPackaged)return;
+  const helper=path.join(process.resourcesPath,'ps-companion','scripts','voice-server.cjs');
+  if(!fs.existsSync(helper))return;
+  photoshopHelperProcess=spawn(process.execPath,[helper],{cwd:path.dirname(helper),env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},windowsHide:true,stdio:'ignore'});
+  photoshopHelperProcess.on('error',()=>{photoshopHelperProcess=null;});
+}
+
 async function waitForServer() {
   for(let attempt=0;attempt<80;attempt++){
     try{const response=await fetch(`${BASE_URL}/api/bridge/health`,{headers:{'X-Cine-Bridge':'1'}});if(response.ok)return;}
@@ -67,6 +76,7 @@ function showWindow(url='/') {
 
 function createWindow() {
   mainWindow=new BrowserWindow({width:430,height:820,minWidth:360,minHeight:560,show:false,alwaysOnTop:true,autoHideMenuBar:true,title:'影词魔方',webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false}});
+  mainWindow.setAlwaysOnTop(true, 'floating');
   mainWindow.on('close',event=>{if(!stopping){event.preventDefault();mainWindow.hide();}});
   mainWindow.webContents.setWindowOpenHandler(({url})=>{require('electron').shell.openExternal(url);return {action:'deny'};});
 }
@@ -87,24 +97,21 @@ function createTray() {
   tray.setToolTip('影词魔方');
   tray.setContextMenu(Menu.buildFromTemplate([
     {label:'打开影词魔方',click:()=>showWindow('/')},
-    {label:'始终置顶',type:'checkbox',checked:true,click:item=>mainWindow.setAlwaysOnTop(item.checked)},
     {type:'separator'},
     {label:'退出',click:()=>{stopping=true;app.quit();}}
   ]));
   tray.on('double-click',()=>showWindow('/'));
 }
 
-ipcMain.handle('cine:setAlwaysOnTop',(_event,value)=>{mainWindow.setAlwaysOnTop(Boolean(value));return mainWindow.isAlwaysOnTop();});
-ipcMain.handle('cine:getWindowState',()=>({alwaysOnTop:mainWindow.isAlwaysOnTop()}));
 ipcMain.handle('cine:hide',()=>mainWindow.hide());
 
 app.whenReady().then(async()=>{
   if(!app.requestSingleInstanceLock())return app.quit();
   prepareLocalData();
-  startServer();createWindow();createTray();
+  startServer();startPhotoshopHelper();createWindow();createTray();
   try{await waitForServer();if(!process.argv.includes('--hidden'))showWindow('/');pollBridge();}catch(error){mainWindow.loadURL(`data:text/plain;charset=utf-8,${encodeURIComponent(error.message)}`);mainWindow.show();}
 });
 app.on('second-instance',()=>showWindow('/'));
 app.on('window-all-closed',()=>{});
-app.on('before-quit',()=>{stopping=true;serverProcess?.kill();});
+app.on('before-quit',()=>{stopping=true;serverProcess?.kill();photoshopHelperProcess?.kill();});
 

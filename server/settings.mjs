@@ -1,16 +1,17 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config, upstream } from './ai.mjs';
+import { normalizeApiBaseUrl } from './api-url.mjs';
 
 export function publicSettings() {
   const provider = /generativelanguage\.googleapis\.com/i.test(config.AI_BASE_URL || '') ? 'gemini' : (config.AI_PROVIDER || 'compatible');
-  return {provider,baseUrl:config.AI_BASE_URL || (provider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' : 'https://api.lingkeai.ai/api/v1'),model:config.AI_MODEL || '',modelGemini:config.AI_MODEL_GEMINI || '',modelGpt:config.AI_MODEL_GPT || '',modelClaude:config.AI_MODEL_CLAUDE || '',hasKey:!!config.AI_API_KEY};
+  return {provider,baseUrl:normalizeApiBaseUrl(config.AI_BASE_URL || (provider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' : 'https://api.lingkeai.ai/api/v1')),model:config.AI_MODEL || '',modelGemini:config.AI_MODEL_GEMINI || '',modelGpt:config.AI_MODEL_GPT || '',modelClaude:config.AI_MODEL_CLAUDE || '',hasKey:!!config.AI_API_KEY};
 }
 export function validateSettings(input) {
   if (!input || typeof input.provider !== 'string' || typeof input.baseUrl !== 'string' || typeof input.model !== 'string' || typeof input.apiKey !== 'string') throw new Error('请填写 API 类型、地址、密钥和模型名称');
   const provider=input.provider.trim();
   if (!['compatible','gemini'].includes(provider)) throw new Error('请选择正确的 API 类型');
-  const baseUrl=input.baseUrl.trim().replace(/\/+$/,'');
+  const baseUrl=normalizeApiBaseUrl(input.baseUrl);
   let url;
   try {url=new URL(baseUrl);} catch {throw new Error('Base URL 格式不正确');}
   if (!['https:','http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('Base URL 只能是 HTTP(S) 接口地址，不能包含密码、查询参数或片段');
@@ -19,7 +20,7 @@ export function validateSettings(input) {
   const optionalModels = [input.modelGemini,input.modelGpt,input.modelClaude].map(value => typeof value === 'string' ? value.trim() : '');
   if (!model || [model,...optionalModels].some(value => value.length>200) || /[\r\n\0]/.test(model+optionalModels.join('')+enteredKey) || enteredKey.length>4096) throw new Error('模型名称或密钥格式不正确');
   const current=publicSettings();
-  if (!enteredKey && (baseUrl!==current.baseUrl.replace(/\/+$/,'') || provider!==current.provider)) throw new Error('更换 API 类型或地址时请重新填写对应密钥');
+  if (!enteredKey && (baseUrl!==normalizeApiBaseUrl(current.baseUrl) || provider!==current.provider)) throw new Error('更换 API 类型或地址时请重新填写对应密钥');
   const apiKey=enteredKey || config.AI_API_KEY;
   if (!apiKey) throw new Error('请填写 API Key');
   if (provider === 'gemini' && !/generativelanguage\.googleapis\.com$/i.test(url.hostname)) throw new Error('Gemini 官方模式请使用 Google 官方 Base URL');

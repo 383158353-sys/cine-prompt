@@ -1,3 +1,4 @@
+import { projectStylePayload } from '../../shared/project-styles.mjs';
 import React, { useState, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
@@ -180,7 +181,7 @@ export default function BatchStoryboard({ sharedStyles = [], projectStyle }) {
           target_type: 'video',
           dialogue_optimize: optimizeDialogue,
           styles: sharedStyles.map((style) => ({ name: style.name, category: style.category, style_prompt: style.style_prompt })),
-          project_style: projectStyle ? { name: projectStyle.name, system_prompt: projectStyle.system_prompt || '' } : undefined
+          project_style: projectStylePayload(projectStyle)
         });
         const d = res.data;
         if (!d || d.error) throw new Error(d?.error || '处理失败');

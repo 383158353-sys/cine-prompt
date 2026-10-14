@@ -6,6 +6,8 @@ export function useSpeechRecognition({ lang = 'zh-CN', onResult, onError } = {})
   const [listening, setListening] = useState(false);
   const [supported, setSupported] = useState(false);
   const recRef = useRef(null);
+  const localRef = useRef(null);
+  const runRef = useRef(0);
   const finalTextRef = useRef('');
   const onResultRef = useRef(onResult);
   const onErrorRef = useRef(onError);
@@ -39,26 +41,52 @@ export function useSpeechRecognition({ lang = 'zh-CN', onResult, onError } = {})
         'service-not-allowed': '请允许浏览器使用麦克风',
         'no-speech': '未检测到语音，请重试',
         'audio-capture': '未找到麦克风设备',
-        'network': '语音服务网络错误，请检查网络',
+        'network': '浏览器语音识别服务不可用。请使用桌面版的本机语音服务，或检查浏览器的语音服务连接。',
         'aborted': '',
       };
       const msg = map[errType];
       if (msg) onErrorRef.current?.(msg, errType);
     };
     recRef.current = rec;
-    return () => { try { rec.abort(); } catch {} };
+    return () => { ++runRef.current;try { rec.abort(); } catch {} };
   }, [lang]);
+  useEffect(()=>{fetch('/api/local/voice/health').then(response=>response.json()).then(data=>{if(data.state==='ready')setSupported(true);}).catch(()=>{});},[]);
 
   // start(initialText)：以当前已有文本为基底，语音在其上追加，不会清空已输入内容
-  const start = useCallback((initialText = '') => {
-    if (!recRef.current) return;
+  const start = useCallback(async (initialText = '') => {
+    const run=++runRef.current;
     finalTextRef.current = initialText || '';
+    try {
+      const health=await fetch('/api/local/voice/health').then(response=>response.json());
+      if(run!==runRef.current)return;
+      if(health.state==='ready') {
+        const response=await fetch('/api/local/voice/start',{method:'POST'}),session=await response.json();
+        if(!response.ok)throw new Error(session.message||'本机语音服务启动失败');
+        if(run!==runRef.current)return;
+        localRef.current={id:session.id,cursor:session.cursor||0};setListening(true);
+        const poll=async()=>{
+          const current=localRef.current;if(run!==runRef.current||!current)return;
+          try {
+            const response=await fetch(`/api/local/voice/status?id=${encodeURIComponent(current.id)}&cursor=${current.cursor}`);
+            const data=await response.json();if(!response.ok)throw new Error(data.message||'语音识别失败');
+            if(run!==runRef.current)return;
+            for(const event of data.events||[])if(event.seq>current.cursor){finalTextRef.current+=event.text;current.cursor=event.seq;onResultRef.current?.(finalTextRef.current);}
+            if(data.state==='error'){localRef.current=null;setListening(false);onErrorRef.current?.(data.message||'本机语音识别失败','local');return;}
+            if(data.state==='complete'){localRef.current=null;setListening(false);if(!current.cursor&&data.message)onErrorRef.current?.(data.message,'local');return;}
+            current.timer=setTimeout(poll,350);
+          } catch(error){if(run===runRef.current){localRef.current=null;setListening(false);onErrorRef.current?.(error.message,'local');}}
+        };poll();return;
+      }
+    } catch {}
+    if(run!==runRef.current)return;
+    if(!recRef.current){onErrorRef.current?.('本机中文语音服务未启动。请重新启动影词魔方。','local');return;}
     try { recRef.current.start(); setListening(true); } catch {}
   }, []);
 
   const stop = useCallback(() => {
-    if (!recRef.current) return;
-    try { recRef.current.stop(); } catch {}
+    ++runRef.current;
+    if(localRef.current){const {id,timer}=localRef.current;clearTimeout(timer);localRef.current=null;fetch(`/api/local/voice/stop?id=${encodeURIComponent(id)}`,{method:'POST'}).catch(()=>{});}
+    try { recRef.current?.stop(); } catch {}
     setListening(false);
   }, []);
 

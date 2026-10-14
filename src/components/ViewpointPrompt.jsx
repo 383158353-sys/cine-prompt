@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+import { projectStylePayload } from '../../shared/project-styles.mjs';
+import React, { useState, useRef, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +11,7 @@ import VoiceTextarea from '@/components/VoiceTextarea';
 import { useImagePaste } from '@/hooks/useImagePaste';
 import ImageAnnotator from '@/components/ImageAnnotator';
 import MultiViewResults from '@/components/MultiViewResults';
-import { compressImage } from '@/lib/compressImage';
+import { compressImages } from '@/lib/compressImage';
 import { urlToFile } from '@/lib/urlToFile';
 
 function extractError(e) {
@@ -19,11 +20,6 @@ function extractError(e) {
   if (typeof body === 'string') return body;
   return e?.message || '未知错误';
 }
-
-const SUBJECTS = [
-  { key: 'character', label: '人物' },
-  { key: 'scene', label: '场景' }
-];
 
 // 一键多视角选项（人物与场景共享，作为默认第一项）
 const MULTI_VIEW_OPT = { key: 'multi_view', label: '一键多视角·360°', icon: Compass };
@@ -47,16 +43,24 @@ const PLACEHOLDERS = {
   scene: '描述你的场景（如：雨后夜晚的赛博朋克街道，霓虹灯反射在湿地面…）'
 };
 
-export default function ViewpointPrompt({ onSaved, initialContext, sharedStyles = [], projectStyle }) {
-  const [subject, setSubject] = useState(initialContext?.subject || 'character');
+export default function ViewpointPrompt({ sharedSubject, onSaved, initialContext, sharedImages, onSharedImagesChange, sharedContext, onSharedContextChange, sharedModel, onSharedModelChange, sharedStyles = [], projectStyle, selectedCharacterPalette, selectedEnvironmentPalette, onSelectedCharacterPaletteChange = (_value) => {}, onSelectedEnvironmentPaletteChange = (_value) => {}, active = true, onTaskStatus }) {
+  const subject = sharedSubject ?? initialContext?.subject ?? 'character';
+  const previousSubject = useRef(subject);
   const [viewType, setViewType] = useState(initialContext?.viewType || 'multi_view');
   const [viewCustom, setViewCustom] = useState(initialContext?.viewCustom || '');
-  const [desc, setDesc] = useState(initialContext?.desc || '');
-  const [refImage, setRefImage] = useState(null);
-  const [refPreview, setRefPreview] = useState(initialContext?.refImage_url || null);
-  const [refUrl, setRefUrl] = useState(initialContext?.refImage_url || null);
+  const [localDesc, setLocalDesc] = useState(initialContext?.desc || '');
+  const [localImages, setLocalImages] = useState(() => {
+    const urls = initialContext?.file_urls?.length ? initialContext.file_urls : (initialContext?.refImage_url ? [initialContext.refImage_url] : []);
+    return urls.map((url) => ({ file: null, preview: url, url }));
+  });
+  const images = sharedImages ?? localImages;
+  const setImages = onSharedImagesChange ?? setLocalImages;
+  const desc = sharedContext ?? localDesc;
+  const setDesc = onSharedContextChange ?? setLocalDesc;
   const [dragOver, setDragOver] = useState(false);
-  const [model, setModel] = useState(initialContext?.model || 'automatic');
+  const [localModel, setLocalModel] = useState(initialContext?.model || 'automatic');
+  const model = sharedModel ?? localModel;
+  const setModel = onSharedModelChange ?? setLocalModel;
   const [targetKey, setTargetKey] = useState(initialContext?.target || 'imagine2');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -64,18 +68,26 @@ export default function ViewpointPrompt({ onSaved, initialContext, sharedStyles 
   const [multiResult, setMultiResult] = useState(null);
   const [copied, setCopied] = useState(null);
   const [showAnnotator, setShowAnnotator] = useState(false);
+  const [annotateIdx, setAnnotateIdx] = useState(null);
   const fileInput = useRef(null);
+
+  useEffect(() => {
+    if (previousSubject.current === subject) return;
+    previousSubject.current = subject;
+    setViewType('multi_view');
+    setResult(null);
+    setMultiResult(null);
+  }, [subject]);
 
   const views = subject === 'character' ? CHAR_VIEWS : SCENE_VIEWS;
   const isMerge = subject === 'character' && viewType === 'merge';
   const isMultiView = viewType === 'multi_view';
-
-  const selectSubject = (s) => {
-    setSubject(s);
-    setViewType('multi_view');
-    setResult(null);
-    setMultiResult(null);
-  };
+  const selectedPalette = subject === 'character' ? selectedCharacterPalette : selectedEnvironmentPalette;
+  const palettePayload = selectedPalette ? {
+    id: selectedPalette.id, name: selectedPalette.name, scope: selectedPalette.scope,
+    palette: selectedPalette.palette, colors: selectedPalette.colors,
+    analysis: selectedPalette.analysis, variation: selectedPalette.variation
+  } : undefined;
 
   const selectView = (v) => {
     setViewType(v);
@@ -88,47 +100,46 @@ export default function ViewpointPrompt({ onSaved, initialContext, sharedStyles 
       toast({ title: '请上传图片文件', variant: 'destructive' });
       return;
     }
-    setRefImage(file);
-    setRefPreview(URL.createObjectURL(file));
-    setRefUrl(null);
+    setImages((prev) => [...prev, { file, preview: URL.createObjectURL(file) }]);
   };
 
-  useImagePaste((files) => { if (files[0]) handleFile(files[0]); });
+  useImagePaste((files) => { Array.from(files || []).forEach(handleFile); },active);
 
-  const onPickFile = (e) => { const f = e.target.files?.[0]; if (f) handleFile(f); };
-  const onDrop = (e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) handleFile(f); };
-  const clearImage = () => { setRefImage(null); setRefPreview(null); setRefUrl(null); if (fileInput.current) fileInput.current.value = ''; };
+  const onPickFile = (e) => { Array.from(e.target.files || []).forEach(handleFile); if (fileInput.current) fileInput.current.value = ''; };
+  const onDrop = (e) => { e.preventDefault(); setDragOver(false); Array.from(e.dataTransfer.files || []).forEach(handleFile); };
+  const clearImage = (idx) => setImages((prev) => prev.filter((image, index) => { if (index !== idx) return true; if (image.preview?.startsWith('blob:')) URL.revokeObjectURL(image.preview); return false; }));
 
   const handleAnnotated = (file) => {
     setShowAnnotator(false);
-    if (file) {
-      setRefImage(file);
-      setRefPreview(URL.createObjectURL(file));
-      setRefUrl(null);
-    }
+    if (file && annotateIdx !== null) setImages((prev) => prev.map((image, index) => index === annotateIdx ? { file, preview: URL.createObjectURL(file) } : image));
+    setAnnotateIdx(null);
+  };
+
+  const uploadImages = async () => {
+    const newFiles = images.filter((image) => image.file).map((image) => image.file);
+    const existingUrls = images.filter((image) => image.url && !image.file).map((image) => image.url);
+    if (!newFiles.length) return existingUrls;
+    const compressed = await compressImages(newFiles);
+    const uploads = await Promise.all(compressed.map((file) => base44.integrations.Core.UploadFile({ file })));
+    return [...uploads.map((upload) => upload.file_url), ...existingUrls];
   };
 
   const handleGenerate = async () => {
-    if (!desc.trim() && !refImage && !refUrl) return;
+    if (!desc.trim() && images.length === 0) return;
     setLoading(true);
+    onTaskStatus?.('running');
     setResult(null);
     setCopied(null);
     try {
-      let fileUrl = null;
-      if (refImage) {
-        const compressed = await compressImage(refImage);
-        const up = await base44.integrations.Core.UploadFile({ file: compressed });
-        fileUrl = up.file_url;
-      } else if (refUrl) {
-        fileUrl = refUrl;
-      }
+      const fileUrls = await uploadImages();
       const selectedTarget = TARGETS.find((t) => t.key === targetKey) || TARGETS[0];
       const res = await base44.functions.invoke('enhancePrompt', {
         mode: 'sheet', subject, view_type: viewType, view_custom: viewCustom,
-        raw_input: desc, file_url: fileUrl, model,
+        raw_input: desc, file_urls: fileUrls, model,
         target: selectedTarget.label, target_type: selectedTarget.type,
         styles: sharedStyles.map((style) => ({ name: style.name, category: style.category, style_prompt: style.style_prompt })),
-        project_style: projectStyle ? { name: projectStyle.name, system_prompt: projectStyle.system_prompt || '' } : undefined
+        project_style: projectStylePayload(projectStyle),
+        color_palette: palettePayload
       });
       const data = res.data;
       // 自动存入提示词库（含用户原始输入）
@@ -142,11 +153,12 @@ export default function ViewpointPrompt({ onSaved, initialContext, sharedStyles 
           direction: `sheet_${viewType}`,
           rating: 3,
           tags: data.tags || [],
-          context: { mode: 'viewpoint', subject, viewType, viewCustom, desc, model, target: targetKey, refImage_url: fileUrl }
+          context: { mode: 'viewpoint', subject, viewType, viewCustom, desc, model, target: targetKey, file_urls: fileUrls, color_palette_id: selectedPalette?.id, color_palette_name: selectedPalette?.name }
         });
         onSaved?.();
       } catch {}
       setResult(data);
+      onTaskStatus?.('done');
       try {
         const copyText = `${data.enhanced_prompt_zh || ''}\n\n${data.enhanced_prompt}`;
         await navigator.clipboard.writeText(copyText.trim());
@@ -156,6 +168,7 @@ export default function ViewpointPrompt({ onSaved, initialContext, sharedStyles 
       }
     } catch (e) {
       console.error('生成失败', e);
+      onTaskStatus?.('error');
       toast({ title: '生成失败', description: extractError(e), variant: 'destructive' });
     } finally {
       setLoading(false);
@@ -172,38 +185,36 @@ export default function ViewpointPrompt({ onSaved, initialContext, sharedStyles 
 
   // 一键多视角：基于参考图并行生成14个视角的完整提示词
   const handleMultiView = async () => {
-    if (!refImage && !refUrl) {
+    if (images.length === 0) {
       toast({ title: '一键多视角需要先上传参考图', variant: 'destructive' });
       return;
     }
     setMultiLoading(true);
+    onTaskStatus?.('running');
     setMultiResult(null);
     try {
-      let fileUrl = null;
-      if (refImage) {
-        const compressed = await compressImage(refImage);
-        const up = await base44.integrations.Core.UploadFile({ file: compressed });
-        fileUrl = up.file_url;
-      } else if (refUrl) {
-        fileUrl = refUrl;
-      }
+      const fileUrls = await uploadImages();
       const selectedTarget = TARGETS.find((t) => t.key === targetKey) || TARGETS[0];
       const res = await base44.functions.invoke('enhancePrompt', {
         mode: 'multi_view', subject,
-        raw_input: desc, file_url: fileUrl, model,
+        raw_input: desc, file_urls: fileUrls, model,
         target: selectedTarget.label, target_type: selectedTarget.type,
         styles: sharedStyles.map((style) => ({ name: style.name, category: style.category, style_prompt: style.style_prompt })),
-        project_style: projectStyle ? { name: projectStyle.name, system_prompt: projectStyle.system_prompt || '' } : undefined
+        project_style: projectStylePayload(projectStyle),
+        color_palette: palettePayload
       });
       const data = res.data;
       if (data.views && data.views.length > 0) {
         setMultiResult(data);
+        onTaskStatus?.('done');
         toast({ title: `已生成 ${data.views.length} 个视角提示词`, description: '每个视角可单独复制使用' });
       } else {
+        onTaskStatus?.('error');
         toast({ title: '生成失败', description: '未返回视角数据', variant: 'destructive' });
       }
     } catch (e) {
       console.error('多视角生成失败', e);
+      onTaskStatus?.('error');
       toast({ title: '多视角生成失败', description: extractError(e), variant: 'destructive' });
     } finally {
       setMultiLoading(false);
@@ -212,13 +223,6 @@ export default function ViewpointPrompt({ onSaved, initialContext, sharedStyles 
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 主体：人物 / 场景 */}
-      <div className="flex gap-1.5">
-        {SUBJECTS.map((s) => (
-          <button key={s.key} onClick={() => selectSubject(s.key)} className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${subject === s.key ? 'bg-foreground text-background' : 'bg-muted/50 text-muted-foreground hover:bg-muted'}`}>{s.label}</button>
-        ))}
-      </div>
-
       {/* 视角选项 */}
       <div className="flex flex-wrap gap-1.5">
         {views.map((v) => {
@@ -240,20 +244,21 @@ export default function ViewpointPrompt({ onSaved, initialContext, sharedStyles 
       {/* 参考图：与增强页一致的"添加图片"样式 */}
       <div onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={onDrop} className={`rounded-lg transition-colors ${dragOver ? 'bg-primary/5 ring-2 ring-primary/30' : ''}`}>
         <div className="flex flex-wrap gap-2">
-          {refPreview ? (
-            <div className="relative rounded-lg overflow-hidden border border-border/60 w-24 h-24">
-              <img src={refPreview} alt="参考图" className="w-full h-full object-cover" />
-              <button onClick={clearImage} className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80">
+          {images.map((image, idx) => (
+            <div key={`${image.preview}-${idx}`} className="relative rounded-lg overflow-hidden border border-border/60 w-24 h-24">
+              <img src={image.preview} alt={`参考图${idx + 1}`} className="w-full h-full object-cover" />
+              <button onClick={() => clearImage(idx)} className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80">
                 <X className="w-3 h-3" />
               </button>
               <button
                 onClick={async () => {
-                  if (!refImage && refUrl) {
+                  if (!image.file && image.url) {
                     try {
-                      const file = await urlToFile(refUrl);
-                      setRefImage(file);
+                      const file = await urlToFile(image.url);
+                      setImages((prev) => prev.map((item, index) => index === idx ? { ...item, file } : item));
                     } catch { return; }
                   }
+                  setAnnotateIdx(idx);
                   setShowAnnotator(true);
                 }}
                 className="absolute bottom-1 right-1 text-[10px] px-1.5 py-0.5 rounded bg-foreground text-background hover:bg-foreground/85 flex items-center gap-1"
@@ -262,14 +267,13 @@ export default function ViewpointPrompt({ onSaved, initialContext, sharedStyles 
                 标注
               </button>
             </div>
-          ) : (
-            <button onClick={() => fileInput.current?.click()} className="flex flex-col items-center justify-center gap-1 w-24 h-24 rounded-lg border border-dashed border-border/60 text-[11px] text-muted-foreground hover:bg-muted/40 hover:border-border transition-colors">
-              <ImagePlus className="w-4 h-4" />
-              <span>添加图片</span>
-            </button>
-          )}
+          ))}
+          <button onClick={() => fileInput.current?.click()} className="flex flex-col items-center justify-center gap-1 w-24 h-24 rounded-lg border border-dashed border-border/60 text-[11px] text-muted-foreground hover:bg-muted/40 hover:border-border transition-colors">
+            <ImagePlus className="w-4 h-4" />
+            <span>添加图片</span>
+          </button>
         </div>
-        <input ref={fileInput} type="file" accept="image/*" onChange={onPickFile} className="hidden" />
+        <input ref={fileInput} type="file" accept="image/*" multiple onChange={onPickFile} className="hidden" />
       </div>
 
       {/* 描述（合并模式下也可补充条件） */}
@@ -282,7 +286,7 @@ export default function ViewpointPrompt({ onSaved, initialContext, sharedStyles 
 
       <Button
         onClick={isMultiView ? handleMultiView : handleGenerate}
-        disabled={isMultiView ? (multiLoading || (!refImage && !refUrl)) : (loading || (!desc.trim() && !refImage))}
+        disabled={isMultiView ? (multiLoading || images.length === 0) : (loading || (!desc.trim() && images.length === 0))}
         className="w-full bg-foreground text-background hover:bg-foreground/90 h-10"
       >
         {(isMultiView ? multiLoading : loading) ? (
@@ -334,11 +338,11 @@ export default function ViewpointPrompt({ onSaved, initialContext, sharedStyles 
 
       {isMultiView && multiResult && <MultiViewResults views={multiResult.views} />}
 
-      {showAnnotator && refImage && (
+      {showAnnotator && annotateIdx !== null && images[annotateIdx]?.file && (
         <ImageAnnotator
-          image={refImage}
+          image={images[annotateIdx].file}
           onDone={handleAnnotated}
-          onCancel={() => setShowAnnotator(false)}
+          onCancel={() => { setShowAnnotator(false); setAnnotateIdx(null); }}
         />
       )}
     </div>

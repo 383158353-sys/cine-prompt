@@ -5,6 +5,7 @@ import { loadEnv } from 'vite';
 import { readFileSync, existsSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import { modelImage } from './model-image.mjs';
+import { normalizeApiBaseUrl } from './api-url.mjs';
 
 const appRoot = process.env.CINE_APP_ROOT || process.cwd();
 const settingsFile = process.env.CINE_SETTINGS_FILE || path.resolve('.env.local');
@@ -58,7 +59,7 @@ export async function upstream(endpoint, body, settings = env) {
   const provider = settings.AI_PROVIDER || 'compatible';
   if (!['compatible','gemini'].includes(provider)) throw new Error('不支持的 API 类型');
   if (!settings.AI_API_KEY) throw new Error('请在 API 设置页面填写 API Key');
-  const baseUrl = (settings.AI_BASE_URL || (provider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' : 'https://api.lingkeai.ai/api/v1')).replace(/\/+$/, '');
+  const baseUrl = normalizeApiBaseUrl(settings.AI_BASE_URL || (provider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' : 'https://api.lingkeai.ai/api/v1'));
   const isGemini = provider === 'gemini';
   if (isGemini && endpoint !== '/chat/completions') throw new Error('Gemini 官方模式暂不支持此图片生成操作');
   const requestUrl = isGemini ? `${baseUrl}/models/${encodeURIComponent(body.model)}:generateContent` : `${baseUrl}${endpoint}`;

@@ -4,7 +4,7 @@ import PromptEnhancer from '@/components/PromptEnhancer';
 import RecoverableBoundary from '@/components/RecoverableBoundary';
 import PromptCard from '@/components/PromptCard';
 import PwaInstallPrompt from '@/components/PwaInstallPrompt';
-import { Search, Sparkles, Library, Star, PlugZap } from 'lucide-react';
+import { Search, Sparkles, Library, Star, PlugZap, Plus, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import BrandLogo from '@/components/BrandLogo';
 
@@ -16,6 +16,17 @@ export default function Home() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('全部');
   const [favOnly, setFavOnly] = useState(false);
+  const [tasks,setTasks]=useState([{id:1,title:'任务 1',status:'idle'}]);
+  const [activeTask,setActiveTask]=useState(1);
+  const nextTaskId=React.useRef(2);
+  const addTask=()=>{const id=nextTaskId.current++;setTasks(current=>[...current,{id,title:`任务 ${id}`,status:'idle'}]);setActiveTask(id);};
+  const updateTask=(id,patch)=>setTasks(current=>current.map(task=>task.id===id?{...task,...patch}:task));
+  const closeTask=(id)=>{
+    const task=tasks.find(item=>item.id===id);
+    if(!task||task.status==='running'||tasks.length===1)return;
+    const remaining=tasks.filter(item=>item.id!==id);
+    setTasks(remaining);if(activeTask===id)setActiveTask(remaining[remaining.length-1].id);
+  };
 
   const loadPrompts = useCallback(async () => {
     setLoading(true);
@@ -76,9 +87,16 @@ export default function Home() {
 
       <main className="max-w-7xl mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
         <aside className="lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto pr-1">
-          <RecoverableBoundary>
-            <PromptEnhancer onSaved={loadPrompts} />
-          </RecoverableBoundary>
+          <div className="flex items-center gap-1 overflow-x-auto pb-2 mb-3 border-b border-border/50" role="tablist" aria-label="工作台任务">
+            {tasks.map(task=><div key={task.id} className={`flex shrink-0 items-center rounded-md border text-xs ${activeTask===task.id?'bg-foreground text-background border-foreground':'bg-muted/40 border-border/60'}`}>
+              <button type="button" role="tab" aria-selected={activeTask===task.id} onClick={()=>setActiveTask(task.id)} className="px-2.5 py-1.5 whitespace-nowrap">{task.title}{task.status==='running'?' · 生成中':task.status==='done'?' · 完成':task.status==='error'?' · 失败':''}</button>
+              {tasks.length>1&&<button type="button" onClick={()=>closeTask(task.id)} disabled={task.status==='running'} title={task.status==='running'?'生成中不能关闭':'关闭任务'} aria-label={`关闭${task.title}`} className="pr-1.5 disabled:opacity-30"><X className="w-3 h-3" /></button>}
+            </div>)}
+            <button type="button" onClick={addTask} className="shrink-0 rounded-md border border-dashed border-border/70 px-2 py-1.5 text-xs" aria-label="新建任务"><Plus className="w-3.5 h-3.5" /></button>
+          </div>
+          {tasks.map(task=><div key={task.id} hidden={activeTask!==task.id}>
+            <RecoverableBoundary><PromptEnhancer active={activeTask===task.id} bridgeEnabled={task.id===1} onSaved={loadPrompts} onTaskStatus={status=>updateTask(task.id,{status})} /></RecoverableBoundary>
+          </div>)}
         </aside>
 
         <section className="lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:pr-1">
