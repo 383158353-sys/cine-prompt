@@ -1,4 +1,4 @@
-param([switch]$CheckOnly, [switch]$SkipLaunch)
+﻿param([switch]$CheckOnly, [switch]$SkipLaunch)
 $ErrorActionPreference = 'Stop'
 $kitRoot = $PSScriptRoot
 $report = [ordered]@{ time=(Get-Date).ToString('o'); integrity=$false; desktopInstalled=$false; pluginVersion=$null; photoshopFound=$false; serviceHealthy=$false; apiConfigured='not inspected'; notes=@() }
