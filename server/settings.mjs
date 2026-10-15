@@ -1,3 +1,4 @@
+import { chatModelIds } from './chat-models.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config, upstream } from './ai.mjs';
@@ -59,7 +60,7 @@ export async function listModels(input) {
   let result;
   try {result=await response.json();} catch {throw new Error('模型列表返回格式不正确');}
   const source=Array.isArray(result.data)?result.data:Array.isArray(result.models)?result.models:[];
-  const models=[...new Set(source.map(item=>typeof item==='string'?item:(item.id || item.name || '')).filter(Boolean).map(name=>name.replace(/^models\//,'')))].sort();
-  if(!models.length) throw new Error('接口已连接，但没有读取到模型列表');
+  const models=chatModelIds(source);
+  if(!models.length) throw new Error('接口已连接，但没有读取到可用的聊天模型；可手动填写模型 ID');
   return {models:models.slice(0,1000)};
 }

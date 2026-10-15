@@ -34,7 +34,7 @@ test('API settings persist locally, never disclose keys, and test without saving
     const chunks=[];for await(const chunk of req)chunks.push(chunk);
     received={url:req.url,body:chunks.length?JSON.parse(Buffer.concat(chunks)):null,authorization:req.headers.authorization};
     res.writeHead(status,{'Content-Type':'application/json'});
-    if(req.method==='GET'){res.end(JSON.stringify({data:[{id:'cheap-model'},{id:'vision-model'},{id:'cheap-model'}]}));return;}
+    if(req.method==='GET'){res.end(JSON.stringify({data:[{id:'deepseek-chat'},{id:'gpt-4o'},{id:'deepseek-chat'},{id:'banana-pro'},{id:'doubao-seedance-2-5'}]}));return;}
     const ok = req.headers['x-goog-api-key'] ? {candidates:[{content:{parts:[{text:content}]}}]} : {choices:[{message:{content}}]};
     res.end(JSON.stringify(status===200 ? ok : {error:'do-not-echo-provider-body'}));
   });
@@ -44,7 +44,7 @@ test('API settings persist locally, never disclose keys, and test without saving
   assert.match((await testSettings(input)).message,/连接成功/);
   assert.equal(received.url,'/v1/chat/completions');assert.equal(received.body.model,'test-model');assert.equal(received.authorization,'Bearer temporary-test-token');
   assert.equal(await fs.readFile(file,'utf8'),before);assert.equal(publicSettings().model,'another-model');
-  const listed=await listModels(input);assert.deepEqual(listed.models,['cheap-model','vision-model']);assert.equal(received.url,'/v1/models');
+  const listed=await listModels(input);assert.deepEqual(listed.models,['deepseek-chat','gpt-4o']);assert.equal(received.url,'/v1/models');
   const gemini=await upstream('/chat/completions',{model:'gemini-3.1-flash-lite',messages:[{role:'system',content:'JSON only'},{role:'user',content:[{type:'text',text:'describe'},{type:'image_url',image_url:{url:'data:image/png;base64,aGVsbG8='}}]}]},{AI_PROVIDER:'gemini',AI_BASE_URL:`http://127.0.0.1:${mock.address().port}/v1beta`,AI_API_KEY:'gemini-test-key'});
   assert.equal(gemini.choices[0].message.content,'OK');
   assert.equal(received.url,'/v1beta/models/gemini-3.1-flash-lite:generateContent');
