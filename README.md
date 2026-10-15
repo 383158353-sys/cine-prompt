@@ -1,5 +1,8 @@
 # 影词模方本地版
 
+
+> **另一台 Windows 电脑**：请看 [INSTALL-其他电脑.md](INSTALL-其他电脑.md)；桌面安装包在 [Releases](https://github.com/383158353-sys/cine-prompt/releases)。
+
 安装 Node.js 22 或更新的 LTS 版本。解压后：
 
 1. 在项目文件夹打开终端，执行 `npm install`。
