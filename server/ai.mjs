@@ -30,8 +30,11 @@ export async function imageUrl(url, maxBytes = 750_000) {
   throw new Error('不支持的图片地址');
 }
 export function selectModel(requested) {
-  const family = /gemini/i.test(requested || '') ? 'GEMINI' : /gpt/i.test(requested || '') ? 'GPT' : /claude/i.test(requested || '') ? 'CLAUDE' : '';
-  const model = (family && env[`AI_MODEL_${family}`]) || env.AI_MODEL;
+  const value = String(requested || '').trim();
+  // 旧版按钮键（Gemini/GPT/Claude）仍映射到设置里的对应模型；其他非“自动”的值视为用户勾选的真实模型 ID
+  const legacy = {gemini_3_flash:'GEMINI',gpt_5_mini:'GPT',claude_sonnet_4_6:'CLAUDE',gemini:'GEMINI',gpt:'GPT',claude:'CLAUDE'}[value.toLowerCase()];
+  if (!legacy && value && value !== 'automatic' && /^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,199}$/.test(value)) return value;
+  const model = (legacy && env[`AI_MODEL_${legacy}`]) || env.AI_MODEL;
   if (!model) throw new Error('请在 API 设置页面填写模型名称');
   return model;
 }

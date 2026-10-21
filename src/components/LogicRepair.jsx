@@ -4,7 +4,7 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Loader2, Wand2, ImagePlus, X, Copy, ChevronDown, ChevronRight, PenLine } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
-import { MODELS } from '@/lib/directions';
+import { useChatModelItems } from '@/components/ChatModelManager';
 import IconPicker from '@/components/IconPicker';
 import VoiceTextarea from '@/components/VoiceTextarea';
 import { useImagePaste } from '@/hooks/useImagePaste';
@@ -67,6 +67,7 @@ export default function LogicRepair({ onSaved, initialContext, sharedImages, onS
   const [dragOver, setDragOver] = useState(false);
   const [localContext, setLocalContext] = useState(initialContext?.context || '');
   const [localModel, setLocalModel] = useState(initialContext?.model || 'automatic');
+  const chatModelItems = useChatModelItems();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [annotateIdx, setAnnotateIdx] = useState(null);
@@ -228,7 +229,7 @@ export default function LogicRepair({ onSaved, initialContext, sharedImages, onS
         className="min-h-[48px] resize-y bg-muted/30 border-border/60 focus-visible:ring-1 text-sm"
       />
 
-      <IconPicker label="大模型" items={MODELS} value={model} onChange={setModel} />
+      <IconPicker label="大模型" items={chatModelItems} value={model} onChange={setModel} />
 
       <Button onClick={handleRepair} disabled={loading || images.length === 0} className="w-full bg-foreground text-background hover:bg-foreground/90 h-10">
         {loading ? (

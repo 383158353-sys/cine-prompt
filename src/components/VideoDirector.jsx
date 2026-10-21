@@ -4,7 +4,8 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Loader2, Clapperboard, ImagePlus, X, PenLine } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
-import { MODELS, VIDEO_TARGETS } from '@/lib/directions';
+import { VIDEO_TARGETS } from '@/lib/directions';
+import { useChatModelItems } from '@/components/ChatModelManager';
 import IconPicker from '@/components/IconPicker';
 import VoiceTextarea from '@/components/VoiceTextarea';
 import { useImagePaste } from '@/hooks/useImagePaste';
@@ -26,6 +27,7 @@ export default function VideoDirector({ onSaved, initialContext, sharedStyles = 
   const [rawInput, setRawInput] = useState(initialContext?.raw_input || '');
   const [targetModel, setTargetModel] = useState(initialContext?.targetModel || 'auto');
   const [model, setModel] = useState(initialContext?.model || 'automatic');
+  const chatModelItems = useChatModelItems();
   const [images, setImages] = useState(() => initialContext?.file_urls?.map((url) => ({ file: null, preview: url, url })) || []);
   const [dragOver, setDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -170,7 +172,7 @@ export default function VideoDirector({ onSaved, initialContext, sharedStyles = 
       </div>
 
       <div className="flex gap-2">
-        <IconPicker label="大模型" items={MODELS} value={model} onChange={setModel} />
+        <IconPicker label="大模型" items={chatModelItems} value={model} onChange={setModel} />
         <IconPicker label="目标视频模型" items={VIDEO_TARGETS} value={targetModel} onChange={setTargetModel} />
       </div>
 

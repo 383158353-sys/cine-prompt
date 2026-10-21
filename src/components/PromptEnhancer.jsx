@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
-import { GROUPS, STYLES, MODELS, TARGETS, PLACEHOLDERS } from '@/lib/directions';
+import { GROUPS, STYLES, TARGETS, PLACEHOLDERS } from '@/lib/directions';
+import { useChatModelItems } from '@/components/ChatModelManager';
 import CustomDirectionForm from '@/components/CustomDirectionForm';
 import DirectionDetail from '@/components/DirectionDetail';
 import { Loader2, Sparkles, ImagePlus, X, Plus, PenLine, Eye } from 'lucide-react';
@@ -60,6 +61,7 @@ export default function PromptEnhancer({ onSaved, compact = false, active = true
   const [viewpointSubject, setViewpointSubject] = useState('character');
   const [direction, setDirection] = useState('character_default');
   const [model, setModel] = useState('automatic');
+  const chatModelItems = useChatModelItems();
   const [targetKey, setTargetKey] = useState('imagine2');
   const [rawInput, setRawInput] = useState('');
   const [images, setImages] = useState([]);
@@ -149,6 +151,8 @@ export default function PromptEnhancer({ onSaved, compact = false, active = true
     if(!id)return;
     fetch(`/api/local/bridge-session?id=${encodeURIComponent(id)}`).then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error);return data;}).then(session=>{
       setBridgeSessionId(session.id);setBridgeOriginalCount(session.originalImageCount || 0);setBridgeCompleted(false);
+      setMode('enhance');
+      setGroup('repair');
       setRawInput(session.text || '');
       setImages((session.images || []).map(image=>({file:null,preview:image.url,url:image.url,bridgeOriginal:true,name:image.name})));
     }).catch(error=>toast({title:'PS 联动读取失败',description:error.message,variant:'destructive'}));
@@ -625,7 +629,7 @@ export default function PromptEnhancer({ onSaved, compact = false, active = true
       </div>
 
       <div className="flex gap-2">
-        <IconPicker label="大模型" items={MODELS} value={model} onChange={setModel} />
+        <IconPicker label="大模型" items={chatModelItems} value={model} onChange={setModel} />
         <IconPicker label="喂给" items={TARGETS} value={targetKey} onChange={setTargetKey} />
       </div>
 

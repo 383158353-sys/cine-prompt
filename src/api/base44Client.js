@@ -1,3 +1,6 @@
+import { autoModelId } from '@/components/ChatModelManager';
+// 「自动」= 用户顺序中第一个勾选且测试通过的模型；都没有时交给服务端用默认模型
+function resolveAutoModel(data){try{if(data&&typeof data==='object'&&(!data.model||data.model==='automatic')){const first=autoModelId();if(first)return {...data,model:first};}}catch{/* ignore */}return data;}
 import { compressImage } from '../lib/compressImage';
 // Compatibility facade: the existing UI now calls only the local server.
 async function request(url, options = {}) {
@@ -21,7 +24,7 @@ const goHome = () => window.location.assign('/');
 const localOnly = async (..._args) => {throw new Error('本地版无需注册、密码或第三方登录，请直接打开首页');};
 export const base44 = {
   entities:Object.fromEntries(['Prompt','Direction','StyleLibrary','ColorPalette'].map(name => [name,Object.fromEntries(['list','filter','get','create','bulkCreate','update','delete'].map(action=>[action,(...args)=>rpc({kind:'entity',name,action,args})]))])),
-  functions:{invoke:async(name,data)=>({data:await rpc({kind:'function',name,data})})},
+  functions:{invoke:async(name,data)=>({data:await rpc({kind:'function',name,data:resolveAutoModel(data)})})},
   integrations:{Core:{UploadFile:async({file})=>{const form=new FormData();form.append('file',await compressImage(file));return request('/api/local/upload',{method:'POST',body:form});}}},
   auth:{me:()=>request('/api/local/user'),isAuthenticated:async()=>true,logout:goHome,redirectToLogin:goHome,loginViaEmailPassword:localOnly,loginWithProvider:localOnly,register:localOnly,verifyOtp:localOnly,resendOtp:localOnly,resetPasswordRequest:localOnly,resetPassword:localOnly,setToken:(..._args)=>{}}
 };

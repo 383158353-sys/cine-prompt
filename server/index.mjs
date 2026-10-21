@@ -7,7 +7,7 @@ import { transform } from 'esbuild';
 import { entity, localUser } from './local-client.mjs';
 import { config, uploadsDir, uploadPath } from './ai.mjs';
 
-import { publicSettings, saveSettings, testSettings, listModels } from './settings.mjs';
+import { publicSettings, saveSettings, testSettings, listModels, testModels } from './settings.mjs';
 import { authorizeBridge, bridgeActivity, bridgeCors, completeBridgeSession, getBridgeSession, optimizeBridge } from './bridge.mjs';
 
 const functions = {};
@@ -69,10 +69,10 @@ const server = http.createServer(async(req,res) => {
       return json(res,completeBridgeSession(JSON.parse((await body(req)).toString())));
     }
     if(url.pathname==='/api/local/settings' && req.method==='GET') return json(res,publicSettings());
-    if(['/api/local/settings','/api/local/settings/test','/api/local/settings/models'].includes(url.pathname) && req.method==='POST') {
+    if(['/api/local/settings','/api/local/settings/test','/api/local/settings/models','/api/local/settings/test-models'].includes(url.pathname) && req.method==='POST') {
       if(!req.headers['content-type']?.startsWith('application/json')) return json(res,{error:'需要 JSON 请求'},415);
       const input=JSON.parse((await body(req)).toString());
-      const result=url.pathname.endsWith('/test') ? await testSettings(input) : url.pathname.endsWith('/models') ? await listModels(input) : await saveSettings(input);
+      const result=url.pathname.endsWith('/test-models') ? await testModels(input) : url.pathname.endsWith('/test') ? await testSettings(input) : url.pathname.endsWith('/models') ? await listModels(input) : await saveSettings(input);
       return json(res,result);
     }
     if(url.pathname==='/api/local/user' && req.method==='GET') return json(res,localUser);

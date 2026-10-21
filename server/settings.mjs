@@ -64,3 +64,24 @@ export async function listModels(input) {
   if(!models.length) throw new Error('接口已连接，但没有读取到可用的聊天模型；可手动填写模型 ID');
   return {models:models.slice(0,1000)};
 }
+// 只对用户勾选的聊天模型逐个测试：一次极短 chat completion（max_tokens:1），返回每条成功/失败原因。
+export async function testModels(input) {
+  const ids=Array.isArray(input?.models)?[...new Set(input.models.filter(id=>typeof id==='string'&&id.trim()&&id.length<=200&&!/[\r\n\0]/.test(id)).map(id=>id.trim()))].slice(0,50):[];
+  if(!ids.length) throw new Error('请先勾选要测试的模型');
+  const values=validateSettings({...input,model:input.model || ids[0]});
+  const results={};
+  for(const id of ids){
+    const started=Date.now();
+    try {
+      const call=()=>upstream('/chat/completions',{model:id,messages:[{role:'user',content:'hi'}],max_tokens:16,stream:false},{...config,...values,AI_TIMEOUT_MS:20000});
+      let result;try{result=await call();}catch{result=await call();} // 平台偶发 400，重试一次
+      if(!Array.isArray(result?.choices) || !result.choices.length) throw new Error('返回格式不兼容：没有 choices');
+      results[id]={ok:true,text:`测试通过 · ${Date.now()-started} ms`};
+    } catch(error) {
+      // 推理模型在极短输出上限下会报 max_tokens/输出上限错误：说明模型可达，视为通过
+      if(/max_tokens|output limit|max_output_tokens/i.test(String(error?.message||''))) { results[id]={ok:true,text:`测试通过（模型可达） · ${Date.now()-started} ms`}; continue; }
+      results[id]={ok:false,text:'失败：'+String(error?.message || '请求失败').replace(/(Bearer\s+|sk[-_])[A-Za-z0-9._-]+/gi,'$1[隐藏]').slice(0,200)};
+    }
+  }
+  return {results};
+}

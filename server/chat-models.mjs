@@ -17,7 +17,9 @@ export function isChatModel(item) {
   if (type && /^(chat|text|llm|language|vision|multimodal)$/i.test(type)) return true;
   // ID-only catalogs have no universal capability field. Keep recognizable chat families;
   // unrecognized custom IDs remain available through manual entry, rather than guessing.
-  return /^(?:chat[-_]|gemini[-_]|gemma[-_]|gpt[-_]|chatgpt[-_]|o[134](?:$|[-_])|claude[-_]|deepseek[-_]|qwen|qwq|qvq|glm[-_\d]|chatglm|minimax[-_](?:m|h)\d|kimi|moonshot|grok[-_]|llama|meta[-_]llama|mistral|mixtral|codestral|magistral|pixtral|command[-_]|ernie|hunyuan[-_](?:turbo|large|standard|pro|lite)|internlm|yi[-_]|jamba|nova[-_]|step[-_\d]|doubao[-_](?:seed[-_](?:\d|chat)|pro|lite|vision))/i.test(id);
+  // LK888/LingkeAI 平台别名：tt-=GPT、gem-=Gemini、op-/sn-/hk-=Claude Opus/Sonnet/Haiku、gk-=Grok（图像/视频/tts 已在上面排除）
+  if (/^(?:tt|gem|op|sn|hk|gk)-\d|^gk-build|^mimo-v\d|^(?:stepfun\/)?step-\d|^doubao-seed-(?:evolving|character)/i.test(id)) return true;
+  return /^(?:[a-z0-9]+\/)?(?:chat[-_]|gemini[-_]|gemma[-_]|gpt[-_]|chatgpt[-_]|o[134](?:$|[-_])|claude[-_]|deepseek[-_]|qwen|qwq|qvq|glm[-_\d]|chatglm|minimax[-_](?:m|h)\d|kimi|moonshot|grok[-_]|llama|meta[-_]llama|mistral|mixtral|codestral|magistral|pixtral|command[-_]|ernie|hunyuan[-_](?:turbo|large|standard|pro|lite)|internlm|yi[-_]|jamba|nova[-_]|step[-_\d]|doubao[-_](?:seed[-_](?:\d|chat)|pro|lite|vision))/i.test(id);
 }
 
 export function chatModelIds(source) {

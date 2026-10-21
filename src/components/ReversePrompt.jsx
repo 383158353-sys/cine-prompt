@@ -3,7 +3,8 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Loader2, Wand2, ImagePlus, X, Save, PenLine } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
-import { GROUPS, MODELS, STYLES } from '@/lib/directions';
+import { GROUPS, STYLES } from '@/lib/directions';
+import { useChatModelItems } from '@/components/ChatModelManager';
 import IconPicker from '@/components/IconPicker';
 import VoiceTextarea from '@/components/VoiceTextarea';
 import { useImagePaste } from '@/hooks/useImagePaste';
@@ -63,6 +64,7 @@ export default function ReversePrompt({ onSaved, initialContext, active = true, 
   const [dimension, setDimension] = useState(initialContext?.dimension || 'style_full');
   const [refine, setRefine] = useState(initialContext?.refine || '');
   const [model, setModel] = useState(initialContext?.model || 'automatic');
+  const chatModelItems = useChatModelItems();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [saveOpen, setSaveOpen] = useState(false);
@@ -280,7 +282,7 @@ export default function ReversePrompt({ onSaved, initialContext, active = true, 
         className="min-h-[48px] resize-none bg-muted/30 border-border/60 focus-visible:ring-1 text-sm"
       />
 
-      <IconPicker label="大模型" items={MODELS} value={model} onChange={setModel} />
+      <IconPicker label="大模型" items={chatModelItems} value={model} onChange={setModel} />
 
       <Button onClick={handleReverse} disabled={loading || images.length === 0} className="w-full bg-foreground text-background hover:bg-foreground/90 h-10">
         {loading ? (

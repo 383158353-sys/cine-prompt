@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2, Eye, Copy, Check, ImagePlus, X, Layers, PenLine, Compass } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
-import { MODELS, TARGETS } from '@/lib/directions';
+import { TARGETS } from '@/lib/directions';
+import { useChatModelItems } from '@/components/ChatModelManager';
 import IconPicker from '@/components/IconPicker';
 import VoiceTextarea from '@/components/VoiceTextarea';
 import { useImagePaste } from '@/hooks/useImagePaste';
@@ -59,6 +60,7 @@ export default function ViewpointPrompt({ sharedSubject, onSaved, initialContext
   const setDesc = onSharedContextChange ?? setLocalDesc;
   const [dragOver, setDragOver] = useState(false);
   const [localModel, setLocalModel] = useState(initialContext?.model || 'automatic');
+  const chatModelItems = useChatModelItems();
   const model = sharedModel ?? localModel;
   const setModel = onSharedModelChange ?? setLocalModel;
   const [targetKey, setTargetKey] = useState(initialContext?.target || 'imagine2');
@@ -280,7 +282,7 @@ export default function ViewpointPrompt({ sharedSubject, onSaved, initialContext
       <VoiceTextarea value={desc} onChange={setDesc} placeholder={isMerge ? '可选：补充角色描述或额外条件（仅上传图片也可生成）' : PLACEHOLDERS[subject]} className="min-h-[90px] resize-y bg-muted/30 border-border/60 focus-visible:ring-1 text-sm" />
 
       <div className="flex gap-2">
-        <IconPicker label="大模型" items={MODELS} value={model} onChange={setModel} />
+        <IconPicker label="大模型" items={chatModelItems} value={model} onChange={setModel} />
         <IconPicker label="喂给" items={TARGETS} value={targetKey} onChange={setTargetKey} />
       </div>
 
