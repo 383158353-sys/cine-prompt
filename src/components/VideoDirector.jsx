@@ -106,8 +106,9 @@ export default function VideoDirector({ onSaved, initialContext, sharedStyles = 
       setResult(data);
       onTaskStatus?.('done');
       try {
-        await navigator.clipboard.writeText(data.enhanced_prompt);
-        toast({ title: '已自动复制英文Prompt' });
+        if (!data.enhanced_prompt_zh) throw new Error('未返回中文提示词');
+        await navigator.clipboard.writeText(data.enhanced_prompt_zh);
+        toast({ title: '已自动复制中文提示词' });
       } catch {}
     } catch (e) {
       onTaskStatus?.('error');

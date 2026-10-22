@@ -216,31 +216,41 @@ export default function ImageAnnotator({ image, onDone, onCancel }) {
     setPendingText(null);
   };
 
-  const handleCopyImage = () => {
-    const canvas = canvasRef.current;
-    canvas.toBlob(async (blob) => {
-      if (!blob) return;
-      try {
-        if (navigator.clipboard && window.ClipboardItem) {
-          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-          toast({ title: '已复制图片到剪贴板' });
-          return;
-        }
-      } catch { /* fall through to download */ }
-      toast({ title: '当前浏览器不支持复制图片，请用保存按钮下载', variant: 'destructive' });
-    }, 'image/png');
+  const exportCanvas = () => {
+    const preview = canvasRef.current, original = imgRef.current;
+    if (!preview || !original || !ready) throw new Error('图片尚未加载完成');
+    const output = document.createElement('canvas');
+    output.width = original.naturalWidth; output.height = original.naturalHeight;
+    const ctx = output.getContext('2d');
+    ctx.drawImage(original, 0, 0);
+    ctx.scale(output.width / preview.width, output.height / preview.height);
+    annotations.forEach(annotation => drawAnnotation(ctx, annotation));
+    if (pendingText?.value.trim()) drawAnnotation(ctx, {type:'text',x:pendingText.x,y:pendingText.y,text:pendingText.value.trim()});
+    return output;
+  };
+  const exportBlob = () => new Promise((resolve, reject) => {
+    try { exportCanvas().toBlob(blob => blob ? resolve(blob) : reject(new Error('无法导出标注图片')), 'image/png'); }
+    catch (error) { reject(error); }
+  });
+  const handleCopyImage = async () => {
+    try {
+      if (!navigator.clipboard?.write || !window.ClipboardItem) throw new Error('当前环境不支持复制图片，请使用保存图片');
+      // Start clipboard.write in the click gesture, before PNG encoding finishes.
+      await navigator.clipboard.write([new window.ClipboardItem({'image/png':exportBlob()})]);
+      toast({title:'已复制标注图片到剪贴板'});
+    } catch (error) { toast({title:'复制失败',description:error.message,variant:'destructive'}); }
   };
 
-  const handleSaveImage = () => {
-    const canvas = canvasRef.current;
-    canvas.toBlob((blob) => {
-      if (!blob) return;
+  const handleSaveImage = async () => {
+    try {
+      const blob = await exportBlob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = 'annotated.png'; a.click();
-      URL.revokeObjectURL(url);
-      toast({ title: '已保存标注图' });
-    }, 'image/png');
+      a.href = url; a.download = `标注图片-${Date.now()}.png`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      toast({ title: '已开始下载标注图，请查看下载文件夹' });
+    } catch (error) { toast({title:'保存失败',description:error.message,variant:'destructive'}); }
   };
 
   const handleDone = () => {
@@ -343,11 +353,11 @@ export default function ImageAnnotator({ image, onDone, onCancel }) {
           <p className="text-[11px] text-muted-foreground flex-1 self-center">
             点击标注可拖动移动位置；圈出要改的部位或加文字说明
           </p>
-          <Button variant="outline" size="sm" onClick={handleSaveImage} disabled={!annotations.length}>
+          <Button variant="outline" size="sm" onClick={handleSaveImage} disabled={!ready}>
             <Download className="w-3.5 h-3.5 mr-1" />
             保存图片
           </Button>
-          <Button variant="outline" size="sm" onClick={handleCopyImage} disabled={!annotations.length}>
+          <Button variant="outline" size="sm" onClick={handleCopyImage} disabled={!ready}>
             <Copy className="w-3.5 h-3.5 mr-1" />
             复制图片
           </Button>

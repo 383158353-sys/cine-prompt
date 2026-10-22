@@ -27,8 +27,9 @@ function HistoryCard({ prompt, onChanged }) {
 
   const handleCopy = (e) => {
     e.stopPropagation();
-    if (!primary) return;
-    navigator.clipboard.writeText(primary);
+    const text = lang === 'en' ? prompt.content : prompt.content_zh;
+    if (!text) { toast({ title: '此记录暂无所选语言提示词，请重新生成' }); return; }
+    navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
     toast({ title: '已复制' });

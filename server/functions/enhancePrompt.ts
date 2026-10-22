@@ -564,6 +564,7 @@ const HOLLYWOOD_SCHEMA = {
     enhanced_prompt_zh: { type: 'string', description: '概念立绘对应的中文提示词，必须是一段完整、专业、可直接用于生成图片的中文角色设计Prompt，不是分析报告' },
     compact_prompt_en: { type: 'string', description: '精简版英文Prompt，保留角色身份/核心轮廓/Shape Language/标志性特征/Costume/CMF/展示形式，删除非必要解释' },
     negative_prompt: { type: 'string', description: '英文负向提示词(Negative Prompt)，根据用户设定动态生成，不要固定复制同一套' },
+    negative_prompt_zh: { type: 'string', description: '对应的完整中文负向提示词，所有约束用中文表达，不要附加英文版本' },
     semantic_lock: { type: 'string', description: '语义锁定摘要(中文)：列出用户已明确指定的、不可修改的信息(身份/性别/年龄/职业/世界设定/必须保留的特征/服装/颜色/材质/道具/风格/禁止元素)' },
     design_thesis: { type: 'string', description: '角色视觉命题(中文一句话)：这是一个【人物核心身份】的角色，同时具有【核心矛盾】，因此视觉设计首先应该让观众感受到【主要视觉印象】' },
     iconic_features: { type: 'array', items: { type: 'string' }, description: '1-3个高度可记忆的标志性视觉特征(中文)' },
@@ -619,6 +620,7 @@ const SCENE_SCHEMA = {
     cinematic_prompt: { type: 'string', description: '叙事微观特写/空间情绪切片(Cinematic Environmental Detail)的英文工业级提示词' },
     cinematic_prompt_zh: { type: 'string', description: '叙事微观特写对应的中文提示词' },
     negative_prompt: { type: 'string', description: '英文负向提示词(Negative Prompt)' },
+    negative_prompt_zh: { type: 'string', description: '对应的完整中文负向提示词，所有约束用中文表达，不要附加英文版本' },
     analysis: { type: 'string', description: '中文Markdown四模块完整结构化分析(剧本意象解构/四维空间工程转译/工业级生图提示词/负向与渲染控制)' },
     tags: { type: 'array', items: { type: 'string' }, description: '3-5个中文标签' }
   },
@@ -696,6 +698,7 @@ const REVERSE_HOLLYWOOD_SCHEMA = {
     scene_prompt: { type: 'string', description: '场景完整独立复刻提示词英文工业级' },
     scene_prompt_zh: { type: 'string', description: '场景独立复刻提示词中文对照' },
     negative_prompt: { type: 'string', description: '英文负向提示词(Negative Prompt)' },
+    negative_prompt_zh: { type: 'string', description: '对应的完整中文负向提示词，所有约束用中文表达，不要附加英文版本' },
     analysis: { type: 'string', description: '中文Markdown四模块完整结构化解构分析(角色深度解构/场景环境解构/视听美学与摄影机参数/终极复刻整合)' },
     tags: { type: 'array', items: { type: 'string' }, description: '3-5个中文标签' }
   },
@@ -714,6 +717,7 @@ const VISUAL_STYLE_SCHEMA = {
     precision_prompt: { type: 'string', description: 'Precision Prompt：高度还原版英文详细提示词(含色彩比例/光线/材质/构图/摄影机/纹理/后期)' },
     precision_prompt_zh: { type: 'string', description: '对应的中文精准提示词' },
     negative_prompt: { type: 'string', description: '英文负向风格约束(Negative Style Constraints，来源于参考图而非套模板)' },
+    negative_prompt_zh: { type: 'string', description: '对应的完整中文负向提示词，所有约束用中文表达，不要附加英文版本' },
     style_signature: { type: 'string', description: '一句专业中文风格定义(风格指纹)，用中文概括整体风格特征，如"低饱和暗酒红主调、大面积留白、柔和正面光、孤立银色高光、平滑合成表面与克制的超现实物件布置构成的编辑感视觉体系"' },
     style_invariants: { type: 'array', items: { type: 'string' }, description: '5-12个必须保留的视觉规律(风格不变量)' },
     analysis: { type: 'string', description: '中文Markdown完整结构化风格DNA分析，严格按从大到小16层顺序输出：01媒介与制作方式(写实/CGI/三渲二/二次元/插画/绘画/实验媒介+写实程度0-100)/02艺术风格与大类美学(主要风格/辅助风格/艺术流派/商业视觉类别)/03整体视觉气质(视觉性格/核心审美矛盾/情绪温度/视觉攻击性/视觉复杂度)/04色彩DNA(主色HEX与面积占比/色彩面积结构Dominant-Supporting-Accent/影调/饱和度/冷暖/色彩关系/色块方式/色彩公式)/05线条与边缘DNA/06形状语言/07材质DNA(材质类型/表面属性/材质对比)/08纹理DNA/09光影DNA(主光方向/光质/光比/阴影/高光/光线类型/Lighting Formula)/10构图DNA(主体位置/主体面积/留白/平衡/构图方式)/11镜头语言(景别/机位/透视/景深+置信度)/12空间语言/13元素词汇(区分风格元素与内容元素)/14视觉节奏/15后期风格/16风格权重(S/A/B/C分级)。每层须给出具体可工程化描述，严禁笼统形容词。' },
@@ -1328,6 +1332,7 @@ export default async function(req) {
         precision_prompt: isFullReverse ? enforceMjVersion(rResult.precision_prompt || '') : '',
         precision_prompt_zh: isFullReverse ? (rResult.precision_prompt_zh || '') : '',
         negative_prompt: isFullReverse ? (rResult.negative_prompt || '') : '',
+        negative_prompt_zh: isFullReverse ? (rResult.negative_prompt_zh || '') : '',
         style_signature: isFullReverse ? (rResult.style_signature || '') : '',
         style_invariants: isFullReverse && Array.isArray(rResult.style_invariants) ? rResult.style_invariants : [],
         analysis: rResult.analysis || '',
@@ -1714,6 +1719,7 @@ export default async function(req) {
         enhanced_prompt_zh: applyColorPaletteToPrompt(swapResult.enhanced_prompt_zh, activePalette, paletteScope, 'zh'),
         compact_prompt_en: enforceMjVersion(swapResult.compact_prompt_en || ''),
         negative_prompt: swapResult.negative_prompt || '',
+        negative_prompt_zh: swapResult.negative_prompt_zh || '',
         semantic_lock: swapResult.semantic_lock || '',
         design_thesis: swapResult.design_thesis || '',
         iconic_features: Array.isArray(swapResult.iconic_features) ? swapResult.iconic_features : [],
@@ -1759,6 +1765,7 @@ export default async function(req) {
       responseData.cinematic_prompt = enforceMjVersion(result.cinematic_prompt);
       responseData.cinematic_prompt_zh = result.cinematic_prompt_zh;
       responseData.negative_prompt = result.negative_prompt;
+      responseData.negative_prompt_zh = result.negative_prompt_zh;
       responseData.analysis = result.analysis;
       // 角色方向：叙事驱动型结构化字段
       if (isCharacter) {

@@ -142,8 +142,8 @@ export default function LogicRepair({ onSaved, initialContext, sharedImages, onS
         await base44.entities.Prompt.create({
           title: data.title || '逻辑修复',
           raw_input: context || '逻辑修复',
-          content: data.repair_prompt_zh || '',
-          content_zh: data.repair_prompt_en || '',
+          content: data.repair_prompt_en || '',
+          content_zh: data.repair_prompt_zh || '',
           category: '场景构图',
           direction: 'repair',
           rating: 3,

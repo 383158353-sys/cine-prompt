@@ -12,6 +12,7 @@ const settingsFile = process.env.CINE_SETTINGS_FILE || path.resolve('.env.local'
 const env = { ...loadEnv('development', appRoot, ''), ...(existsSync(settingsFile) ? parseEnv(readFileSync(settingsFile, 'utf8')) : {}), ...process.env };
 export const dataDir = path.resolve(env.LOCAL_DATA_DIR || 'local-data');
 export const uploadsDir = path.join(dataDir, 'uploads');
+env.AI_MODEL ||= env.AI_PROVIDER === 'gemini' ? 'gemini-3.1-flash-lite' : 'gem-3.8-flash';
 export const config = env;
 const mime = { '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.webp':'image/webp', '.gif':'image/gif' };
 export function uploadPath(url) {
@@ -109,6 +110,10 @@ function validate(value, schema) {
   if (type === 'array' && schema.items) value.forEach(item => validate(item, schema.items));
 }
 export async function InvokeLLM({ prompt, file_urls = [], response_json_schema, model }) {
+  if (response_json_schema?.properties?.negative_prompt_zh) {
+    response_json_schema = { ...response_json_schema, required: [...new Set([...(response_json_schema.required || []), 'negative_prompt_zh'])] };
+    prompt += '\n必须同时返回 negative_prompt_zh：将 negative_prompt 中全部负向约束完整翻译成中文，不附加英文。所有 _zh 字段只输出中文版本，保留必要的型号和参数。';
+  }
   const content = [{ type:'text', text:prompt }];
   const imageBudget = Math.min(750_000, Math.floor(2_700_000 / Math.max(1, file_urls.length)));
   for (const url of file_urls) content.push({ type:'image_url', image_url:{url: await imageUrl(url, imageBudget)} });

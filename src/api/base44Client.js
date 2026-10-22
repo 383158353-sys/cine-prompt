@@ -1,7 +1,5 @@
-import { autoModelId } from '@/components/ChatModelManager';
-// 「自动」= 用户顺序中第一个勾选且测试通过的模型；都没有时交给服务端用默认模型
-function resolveAutoModel(data){try{if(data&&typeof data==='object'&&(!data.model||data.model==='automatic')){const first=autoModelId();if(first)return {...data,model:first};}}catch{/* ignore */}return data;}
 import { compressImage } from '../lib/compressImage';
+function resolveAutoModel(data) { return data; }
 // Compatibility facade: the existing UI now calls only the local server.
 async function request(url, options = {}) {
   const response = await fetch(url, options);

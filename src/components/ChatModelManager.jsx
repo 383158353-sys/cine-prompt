@@ -40,7 +40,7 @@ export function saveModelState(state) {
 }
 export function usableModels(state) { return ids(state.selected).filter(id => ids(state.candidates).includes(id) && state.results?.[id]?.ok); }
 
-export default function ChatModelManager({ state, setState, onTest, busy, header }) {
+export default function ChatModelManager({ state, setState, onTest, busy, header = undefined }) {
   const [query, setQuery] = useState('');
   const [adding, setAdding] = useState(false);
   const [newId, setNewId] = useState('');
@@ -102,15 +102,17 @@ export async function autoTestUntested() {
 export function useChatModelItems() {
   const read = () => { try { const st = loadModelState(); const c = ids(st.candidates); return ids(st.selected).filter(id => c.includes(id)).map(id => ({ id, r: st.results?.[id] })); } catch { return []; } };
   const [list, setList] = React.useState(read);
+  const [defaultModel, setDefaultModel] = React.useState('gem-3.8-flash');
   React.useEffect(() => {
-    const refresh = () => setList(read());
+    const refresh = () => { setList(read()); fetch('/api/local/settings').then(r => r.json()).then(cfg => { if (cfg.model) setDefaultModel(cfg.model); }).catch(() => {}); };
+    refresh();
     window.addEventListener('cine-models-changed', refresh); window.addEventListener('storage', refresh); window.addEventListener('focus', refresh);
     autoTestUntested().then(refresh);
     return () => { window.removeEventListener('cine-models-changed', refresh); window.removeEventListener('storage', refresh); window.removeEventListener('focus', refresh); };
   }, []);
   const name = id => CURATED.find(m => m.id === id)?.label || id;
   const mark = r => (r ? (r.ok ? '' : ' ✗ 失败') : ' · 未测');
-  const auto = pickAutoModel(list);
+  const auto = defaultModel;
   return [{ key: 'automatic', label: auto ? `自动（${name(auto)}）` : '自动（默认模型）', short: '自动' }, ...list.map(({ id, r }) => ({ key: id, label: name(id) + mark(r), short: name(id) }))];
 }
 // 自动：第一个测试通过的；没有则第一个勾选的

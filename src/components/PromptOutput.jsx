@@ -38,7 +38,7 @@ function renderLiteMarkdown(text) {
 }
 
 // 把主提示词与负向提示词整合为可直接喂给模型的最终提示词
-function buildVariant(base, baseZh, neg) {
+function buildVariant(base, baseZh, neg, negZh) {
   const negT = (neg || '').trim();
   let en = base || '';
   let zh = baseZh || '';
@@ -46,7 +46,8 @@ function buildVariant(base, baseZh, neg) {
     if (/--(ar|v|style|niji)\b/.test(en)) en = en + ' --no ' + negT;
     else en = en + '\n\nNegative prompt: ' + negT;
   }
-  if (zh && negT) zh = zh + '\n\n负向提示词：' + negT;
+
+  if (zh && negZh) zh += '\n\n负向提示词：' + negZh;
   return { en, zh };
 }
 
@@ -88,16 +89,16 @@ export default function PromptOutput({ result, rawInput = undefined, onRate = un
   const [showAdded, setShowAdded] = useState(false);
   const [copied, setCopied] = useState(null);
 
-  const variants = { concept: buildVariant(result.enhanced_prompt, result.enhanced_prompt_zh, result.negative_prompt) };
-  if (hasCinematic) variants.cinematic = buildVariant(result.cinematic_prompt, result.cinematic_prompt_zh, result.negative_prompt);
+  const variants = { concept: buildVariant(result.enhanced_prompt, result.enhanced_prompt_zh, result.negative_prompt, result.negative_prompt_zh) };
+  if (hasCinematic) variants.cinematic = buildVariant(result.cinematic_prompt, result.cinematic_prompt_zh, result.negative_prompt, result.negative_prompt_zh);
   if (isReverseStyle) {
-    variants.template = buildVariant(result.prompt_template, result.prompt_template_zh, result.negative_prompt);
-    variants.precision = buildVariant(result.precision_prompt, result.precision_prompt_zh, result.negative_prompt);
+    variants.template = buildVariant(result.prompt_template, result.prompt_template_zh, result.negative_prompt, result.negative_prompt_zh);
+    variants.precision = buildVariant(result.precision_prompt, result.precision_prompt_zh, result.negative_prompt, result.negative_prompt_zh);
   }
   const current = variants[variant] || variants.concept;
   const displayText = lang === 'en' ? current.en : current.zh;
-  // 复制时中文在前、英文在后（完整两版），无论当前显示哪种语言
-  const fullCopyText = current.zh && current.en ? `${current.zh}\n\n${current.en}` : (current.zh || current.en || '');
+  // 按当前选择的语言复制，不混合两版。
+  const fullCopyText = (lang === 'en' ? current.en : current.zh) || ''; 
 
   const handleCopy = (text, key) => {
     if (!text) return;
@@ -109,7 +110,7 @@ export default function PromptOutput({ result, rawInput = undefined, onRate = un
 
   const hasCharacter = Boolean(result.character_prompt);
   const hasScene = Boolean(result.scene_prompt);
-  const hasNegative = Boolean(result.negative_prompt);
+  const hasNegative = Boolean(result.negative_prompt || result.negative_prompt_zh);
   const hasAnalysis = (typeof result.analysis === 'string' && result.analysis.length > 0) || (typeof result.director_design === 'string' && result.director_design.length > 0);
   const hasSemantic = Boolean(result.semantic_lock);
   const hasAddedInfo = Array.isArray(result.added_information) && result.added_information.length > 0;
@@ -185,7 +186,7 @@ export default function PromptOutput({ result, rawInput = undefined, onRate = un
 
       {/* 其余内容默认折叠，展开后才显示 */}
       {hasCharacter && (
-        <CollapsibleSection open={showCharacter} setOpen={setShowCharacter} label="人物独立复刻提示词" copyKey="char" copyText={lang === 'en' ? result.character_prompt : (result.character_prompt_zh || result.character_prompt)} onCopy={handleCopy} copied={copied}>
+        <CollapsibleSection open={showCharacter} setOpen={setShowCharacter} label="人物独立复刻提示词" copyKey="char" copyText={lang === 'en' ? result.character_prompt : result.character_prompt_zh} onCopy={handleCopy} copied={copied}>
           <div className="rounded-lg border border-border/40 bg-muted/20 p-2.5">
             <p className={`text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap ${lang === 'en' ? 'font-mono' : ''}`}>{lang === 'en' ? result.character_prompt : (result.character_prompt_zh || result.character_prompt)}</p>
           </div>
@@ -193,7 +194,7 @@ export default function PromptOutput({ result, rawInput = undefined, onRate = un
       )}
 
       {hasScene && (
-        <CollapsibleSection open={showScene} setOpen={setShowScene} label="场景独立复刻提示词" copyKey="scene" copyText={lang === 'en' ? result.scene_prompt : (result.scene_prompt_zh || result.scene_prompt)} onCopy={handleCopy} copied={copied}>
+        <CollapsibleSection open={showScene} setOpen={setShowScene} label="场景独立复刻提示词" copyKey="scene" copyText={lang === 'en' ? result.scene_prompt : result.scene_prompt_zh} onCopy={handleCopy} copied={copied}>
           <div className="rounded-lg border border-border/40 bg-muted/20 p-2.5">
             <p className={`text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap ${lang === 'en' ? 'font-mono' : ''}`}>{lang === 'en' ? result.scene_prompt : (result.scene_prompt_zh || result.scene_prompt)}</p>
           </div>
@@ -201,9 +202,9 @@ export default function PromptOutput({ result, rawInput = undefined, onRate = un
       )}
 
       {hasNegative && (
-        <CollapsibleSection open={showNegative} setOpen={setShowNegative} label="负向提示词" tone="neg" copyKey="neg" copyText={result.negative_prompt} onCopy={handleCopy} copied={copied}>
+        <CollapsibleSection open={showNegative} setOpen={setShowNegative} label="负向提示词" tone="neg" copyKey="neg" copyText={lang === 'en' ? result.negative_prompt : result.negative_prompt_zh} onCopy={handleCopy} copied={copied}>
           <div className="rounded-lg border border-destructive/20 bg-destructive/[0.03] p-2.5">
-            <p className="text-xs leading-relaxed text-destructive/70 whitespace-pre-wrap font-mono">{result.negative_prompt}</p>
+            <p className="text-xs leading-relaxed text-destructive/70 whitespace-pre-wrap font-mono">{lang === 'en' ? result.negative_prompt : result.negative_prompt_zh}</p>
           </div>
         </CollapsibleSection>
       )}

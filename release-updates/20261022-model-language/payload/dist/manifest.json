@@ -1,0 +1,32 @@
+{
+  "name": "影词模方 · AI提示词工作台",
+  "short_name": "影词模方",
+  "description": "AI电影提示词增强与管理助手",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#1a1c22",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/brand-icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand-icon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

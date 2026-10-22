@@ -45,7 +45,7 @@ function buildFinalPrompt(data) {
   const zh = (() => {
     let base = data.cinematic_prompt_zh || data.enhanced_prompt_zh || '';
     if (!base) return '';
-    const neg = (data.negative_prompt || '').trim();
+    const neg = (data.negative_prompt_zh || '').trim();
     if (!neg) return base;
     return `${base}\n\n负向提示词：${neg}`;
   })();
@@ -317,9 +317,10 @@ export default function PromptEnhancer({ onSaved, compact = false, active = true
         setBridgeCompleted(true);toast({title:'已回传 Photoshop',description:bridgeAddedImages.length?`提示词和 ${bridgeAddedImages.length} 张新增图片已同步`:'优化提示词已填回 PS'});
       }
       try {
-        const copyText = `${finalPrompt.zh || data.enhanced_prompt_zh || ''}\n\n${finalPrompt.en || data.enhanced_prompt}`;
+        const copyText = (finalPrompt.zh || data.enhanced_prompt_zh || '');
+        if (!copyText.trim()) throw new Error('未返回中文提示词');
         await navigator.clipboard.writeText(copyText.trim());
-        toast({ title: '已自动复制（中文在前，英文在后）' });
+        toast({ title: '已自动复制中文提示词' });
       } catch {
         toast({ title: '优化完成，可手动复制' });
       }

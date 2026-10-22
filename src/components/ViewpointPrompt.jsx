@@ -162,9 +162,10 @@ export default function ViewpointPrompt({ sharedSubject, onSaved, initialContext
       setResult(data);
       onTaskStatus?.('done');
       try {
-        const copyText = `${data.enhanced_prompt_zh || ''}\n\n${data.enhanced_prompt}`;
+        const copyText = [data.enhanced_prompt_zh || '', data.negative_prompt_zh ? `负向提示词：${data.negative_prompt_zh}` : ''].filter(Boolean).join('\n\n');
+        if (!copyText.trim()) throw new Error('未返回中文提示词');
         await navigator.clipboard.writeText(copyText.trim());
-        toast({ title: '已自动复制（中文在前，英文在后）' });
+        toast({ title: '已自动复制中文提示词' });
       } catch {
         toast({ title: '生成完成，可手动复制' });
       }
