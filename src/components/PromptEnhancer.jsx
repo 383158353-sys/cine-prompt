@@ -24,6 +24,7 @@ import { compressImages } from '@/lib/compressImage';
 import { createPaletteImage } from '@/lib/paletteImage';
 import { PROJECT_STYLES, projectStylePayload } from '../../shared/project-styles.mjs';
 import { urlToFile } from '@/lib/urlToFile';
+import { bridgeBannerCopy, bridgeIdFromSearch, initialEnhanceGroup } from '@/lib/bridgeSession';
 
 function extractError(e) {
   const body = e?.response?.data || e?.data || e?.response?.body;
@@ -57,7 +58,12 @@ function fileDataUrl(file) {
 }
 
 export default function PromptEnhancer({ onSaved, compact = false, active = true, bridgeEnabled = true, onTaskStatus }) {
-  const [group, setGroup] = useState('character');
+  const location = useLocation();
+  const navigate = useNavigate();
+  // PS「优化」用 /?bridge= 整页打开。首帧就要是逻辑修复，不能等会话接口，
+  // 否则默认「角色」会先画出来；loadURL 重载和已打开窗口换会话都读这个地址。
+  const bridgeIdFromUrl = bridgeEnabled ? bridgeIdFromSearch(location.search) : '';
+  const [group, setGroup] = useState(() => initialEnhanceGroup(bridgeEnabled ? location.search : ''));
   const [viewpointSubject, setViewpointSubject] = useState('character');
   const [direction, setDirection] = useState('character_default');
   const [model, setModel] = useState('automatic');
@@ -87,6 +93,19 @@ export default function PromptEnhancer({ onSaved, compact = false, active = true
   const [bridgeSessionId,setBridgeSessionId]=useState('');
   const [bridgeOriginalCount,setBridgeOriginalCount]=useState(0);
   const [bridgeCompleted,setBridgeCompleted]=useState(false);
+  const landedBridgeIdRef = useRef(bridgeIdFromUrl);
+  if (landedBridgeIdRef.current !== bridgeIdFromUrl) {
+    landedBridgeIdRef.current = bridgeIdFromUrl;
+    if (bridgeIdFromUrl) {
+      setGroup('repair');
+      setMode('enhance');
+      setBridgeSessionId('');
+      setBridgeOriginalCount(0);
+      setBridgeCompleted(false);
+      setRawInput('');
+      setImages([]);
+    }
+  }
   const [showStyleLib, setShowStyleLib] = useState(false);
   const fileInput = useRef(null);
   const cancelRef = useRef(false);
@@ -102,18 +121,18 @@ export default function PromptEnhancer({ onSaved, compact = false, active = true
 
   useEffect(() => { loadCustom(); }, []);
 
-  // 从历史记录恢复编辑上下文
-  const location = useLocation();
-  const navigate = useNavigate();
+  // 从历史记录恢复编辑上下文。有 PS 联动时不能恢复，否则异步结果会把分组改回角色/环境/视角/镜头。
   const [restoreCtx, setRestoreCtx] = useState(null);
   const [restoreKey, setRestoreKey] = useState(0);
   useEffect(() => {
     if(!bridgeEnabled)return;
     const params = new URLSearchParams(location.search);
+    if (bridgeIdFromSearch(location.search)) return;
     const rid = params.get('restore');
     if (!rid) return;
+    let cancelled = false;
     base44.entities.Prompt.get(rid).then((p) => {
-      if (!p?.context) return;
+      if (cancelled || !p?.context) return;
       const ctx = p.context;
       setRestoreCtx(ctx);
       if (ctx.mode === 'enhance' || ctx.mode === 'style_swap') {
@@ -143,19 +162,27 @@ export default function PromptEnhancer({ onSaved, compact = false, active = true
       setRestoreKey((k) => k + 1);
       navigate('/', { replace: true });
     }).catch(() => {});
-  }, [location.search]);
+    return () => { cancelled = true; };
+  }, [location.search, bridgeEnabled, navigate]);
 
   useEffect(()=>{
     if(!bridgeEnabled)return;
-    const id=new URLSearchParams(location.search).get('bridge');
+    const id=bridgeIdFromSearch(location.search);
     if(!id)return;
-    fetch(`/api/local/bridge-session?id=${encodeURIComponent(id)}`).then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error);return data;}).then(session=>{
+    const controller=new AbortController();
+    let cancelled=false;
+    fetch(`/api/local/bridge-session?id=${encodeURIComponent(id)}`,{signal:controller.signal}).then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error);return data;}).then(session=>{
+      if(cancelled || bridgeIdFromSearch(window.location.search)!==id)return;
       setBridgeSessionId(session.id);setBridgeOriginalCount(session.originalImageCount || 0);setBridgeCompleted(false);
       setMode('enhance');
       setGroup('repair');
       setRawInput(session.text || '');
       setImages((session.images || []).map(image=>({file:null,preview:image.url,url:image.url,bridgeOriginal:true,name:image.name})));
-    }).catch(error=>toast({title:'PS 联动读取失败',description:error.message,variant:'destructive'}));
+    }).catch(error=>{
+      if(cancelled || error?.name==='AbortError')return;
+      toast({title:'PS 联动读取失败',description:error.message,variant:'destructive'});
+    });
+    return ()=>{cancelled=true;controller.abort();};
   },[location.search,bridgeEnabled]);
 
   // 合并内置 + 自定义方向
@@ -385,7 +412,7 @@ export default function PromptEnhancer({ onSaved, compact = false, active = true
 
   return (
     <div className="flex flex-col gap-4">
-      {bridgeSessionId && <div className={`rounded-lg border px-3 py-2 text-xs ${bridgeCompleted?'border-emerald-300 bg-emerald-50 text-emerald-700':'border-blue-300 bg-blue-50 text-blue-700'}`}>{bridgeCompleted?'已增强并回传 PS；现在可回到 PS 点击生成。':'PS 已连接：可继续选择角色/环境、方向、风格库和模型，也可拖入新图片；点击增强后自动回传。'}</div>}
+      {bridgeSessionId && <div className={`rounded-lg border px-3 py-2 text-xs ${bridgeCompleted?'border-emerald-300 bg-emerald-50 text-emerald-700':'border-blue-300 bg-blue-50 text-blue-700'}`}>{bridgeBannerCopy({ group, completed: bridgeCompleted })}</div>}
       {/* 顶层：增强 / 反推 */}
       <div className="flex gap-1.5">
         <button className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all bg-foreground text-background">增强</button>
@@ -393,10 +420,13 @@ export default function PromptEnhancer({ onSaved, compact = false, active = true
       </div>
 
       {/* 子分类：角色 / 环境 / 视角 / 镜头 */}
-      <div className="flex gap-1.5">
+      <div className="flex gap-1.5" role="tablist" aria-label="增强分组">
         {GROUPS.map((g) => (
           <button
             key={g.key}
+            type="button"
+            role="tab"
+            aria-selected={group === g.key}
             onClick={() => selectGroup(g.key)}
             className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${group === g.key ? 'bg-foreground text-background' : 'bg-muted/50 text-muted-foreground hover:bg-muted'}`}
           >
@@ -502,7 +532,7 @@ export default function PromptEnhancer({ onSaved, compact = false, active = true
         />
       ) : isRepair ? (
         <LogicRepair
-          key={restoreKey}
+          key={`${restoreKey}:${bridgeIdFromUrl}`}
           active={active} onTaskStatus={onTaskStatus}
           onSaved={onSaved}
           initialContext={restoreCtx}
