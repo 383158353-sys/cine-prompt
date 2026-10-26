@@ -21,6 +21,7 @@ test('desktop installer bundles the PS plugin and keeps local data on uninstall'
   assert.match(pkg.scripts['package:windows'],/build-desktop-installer\.ps1/);
   assert.equal(pkg.build.win.artifactName,'CinePrompt-Photoshop-Windows.exe');
   assert.deepEqual(pkg.build.mac.target,['zip']);
+  assert.equal(pkg.build.mac.minimumSystemVersion,'12.0');
   assert.equal(pkg.build.mac.artifactName,'CinePrompt-Mac-${arch}.${ext}');
   assert.equal(pkg.build.nsis.oneClick,true);
   assert.equal(pkg.build.nsis.deleteAppDataOnUninstall,false);
