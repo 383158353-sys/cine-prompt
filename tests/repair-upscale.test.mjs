@@ -17,10 +17,10 @@ test('upscale preset locks texture detail and preserves tone and light', () => {
   assert.equal(result.repair_preset, 'upscale');
 });
 
-test('logic repair exposes a one-click upscale control', () => {
+test('logic repair exposes an upscale toggle that does not auto-generate', () => {
   const source = fs.readFileSync(new URL('../src/components/LogicRepair.jsx', import.meta.url), 'utf8');
   assert.match(source, />超清</);
   assert.match(source, /repair_preset: useUpscale \? UPSCALE_PRESET/);
   assert.match(source, /一键超清/);
-  assert.match(source, /handleRepair\(true\)/);
+  assert.ok(!source.includes('handleRepair(true)'), '超清 must not call handleRepair directly — generation is triggered only by the submit button');
 });
