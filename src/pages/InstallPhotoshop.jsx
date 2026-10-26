@@ -2,8 +2,10 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { CheckCircle2, Download, HardDrive, PlugZap, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import DesktopDownloads from '@/components/DesktopDownloads';
+import { DOWNLOADS } from '@/lib/downloads';
 
-const DOWNLOAD_URL = 'https://github.com/383158353-sys/cine-prompt/releases/latest/download/CinePrompt-Photoshop-Windows.exe';
+const DOWNLOAD_URL = DOWNLOADS.windows;
 
 const steps = [
   ['下载安装包', '下载 CinePrompt-Photoshop-Windows.exe。'],
@@ -33,6 +35,7 @@ export default function InstallPhotoshop() {
           </p>
         </div>
 
+        <DesktopDownloads />
         <div className="rounded-2xl border border-border/60 bg-card p-6 text-center mb-8">
           <Button asChild className="w-full sm:w-auto h-12 px-8 text-base bg-foreground text-background hover:bg-foreground/90">
             <a href={DOWNLOAD_URL}>
@@ -40,7 +43,8 @@ export default function InstallPhotoshop() {
               下载 Windows 一键安装包
             </a>
           </Button>
-          <p className="text-xs text-muted-foreground mt-3">Windows 10/11 · Photoshop 2024/2025 · 无需 Node.js</p>
+          <p className="text-xs text-muted-foreground mt-3">Windows x64 · 不需要管理员权限，也不需要另装 Node.js · Photoshop 25+</p>
+          <p className="text-xs text-muted-foreground mt-2">Mac 请下载上方的 Apple 芯片或 Intel 安装包。Mac 包未做 Apple 公证。Photoshop 语音和拖放助手目前仅 Windows。</p>
         </div>
 
         <div className="grid sm:grid-cols-3 gap-3 mb-10">

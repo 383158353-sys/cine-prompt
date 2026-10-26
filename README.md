@@ -1,7 +1,7 @@
 # 影词模方本地版
 
 
-> **另一台 Windows 电脑**：请看 [INSTALL-其他电脑.md](INSTALL-其他电脑.md)；桌面安装包在 [Releases](https://github.com/383158353-sys/cine-prompt/releases)。
+> **给别人用**：打开 https://cine-prompt-tau.vercel.app 。网页里可以直接写提示词，页面上也能下载当前版本的 Windows 和 Mac 安装包。安装说明见 [INSTALL-其他电脑.md](INSTALL-其他电脑.md)。
 
 安装 Node.js 22 或更新的 LTS 版本。解压后：
 

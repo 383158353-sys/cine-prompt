@@ -7,6 +7,7 @@ import PwaInstallPrompt from '@/components/PwaInstallPrompt';
 import { Search, Sparkles, Library, Star, PlugZap, Plus, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import BrandLogo from '@/components/BrandLogo';
+import DesktopDownloads from '@/components/DesktopDownloads';
 
 const CATEGORIES = ['全部', '综合提示', '镜头运镜', '光影氛围', '风格美学', '角色表演', '场景构图', '后期特效'];
 
@@ -85,7 +86,9 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        {import.meta.env.VITE_PUBLIC_WEB === 'true' && <DesktopDownloads />}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
         <aside className="lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto pr-1">
           <div className="flex items-center gap-1 overflow-x-auto pb-2 mb-3 border-b border-border/50" role="tablist" aria-label="工作台任务">
             {tasks.map(task=><div key={task.id} className={`flex shrink-0 items-center rounded-md border text-xs ${activeTask===task.id?'bg-foreground text-background border-foreground':'bg-muted/40 border-border/60'}`}>
@@ -163,6 +166,7 @@ export default function Home() {
             </div>
           )}
         </section>
+        </div>
       </main>
     </div>
   );

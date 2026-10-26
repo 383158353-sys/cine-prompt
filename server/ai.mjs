@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { loadEnv } from 'vite';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { readFileSync, existsSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import { modelImage } from './model-image.mjs';
@@ -9,11 +9,44 @@ import { normalizeApiBaseUrl } from './api-url.mjs';
 
 const appRoot = process.env.CINE_APP_ROOT || process.cwd();
 const settingsFile = process.env.CINE_SETTINGS_FILE || path.resolve('.env.local');
-const env = { ...loadEnv('development', appRoot, ''), ...(existsSync(settingsFile) ? parseEnv(readFileSync(settingsFile, 'utf8')) : {}), ...process.env };
+function readEnvFile(file) {
+  if (!existsSync(file)) return {};
+  return parseEnv(readFileSync(file, 'utf8'));
+}
+function loadLocalEnv(root, mode) {
+  return {
+    ...readEnvFile(path.join(root, '.env')),
+    ...readEnvFile(path.join(root, '.env.local')),
+    ...readEnvFile(path.join(root, `.env.${mode}`)),
+    ...readEnvFile(path.join(root, `.env.${mode}.local`))
+  };
+}
+const env = { ...loadLocalEnv(appRoot, 'development'), ...readEnvFile(settingsFile), ...process.env };
 export const dataDir = path.resolve(env.LOCAL_DATA_DIR || 'local-data');
 export const uploadsDir = path.join(dataDir, 'uploads');
 env.AI_MODEL ||= env.AI_PROVIDER === 'gemini' ? 'gemini-3.1-flash-lite' : 'gem-3.8-flash';
 export const config = env;
+const settingsStore = new AsyncLocalStorage();
+export function withSettings(values, fn) { return settingsStore.run(values, fn); }
+export function currentConfig() {
+  const overlay = settingsStore.getStore();
+  return overlay ? { ...config, ...overlay } : config;
+}
+function assertPublicBaseUrl(baseUrl) {
+  if (process.env.CINE_PUBLIC_WEB !== '1') return;
+  let url;
+  try { url = new URL(baseUrl); } catch { throw new Error('Base URL 格式不正确'); }
+  if (url.protocol !== 'https:') throw new Error('网页版只接受 HTTPS API 地址');
+  const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  const blocked = host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host === '0.0.0.0' || host === 'metadata.google.internal';
+  if (blocked || host.includes(':')) throw new Error('网页版不能访问本机或内网地址');
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (ipv4) {
+    const n = ipv4.slice(1).map(Number);
+    const privateAddress = n.some(part => part > 255) || n[0] === 10 || n[0] === 127 || n[0] === 0 || (n[0] === 169 && n[1] === 254) || (n[0] === 172 && n[1] >= 16 && n[1] <= 31) || (n[0] === 192 && n[1] === 168) || (n[0] === 100 && n[1] >= 64 && n[1] <= 127);
+    if (privateAddress) throw new Error('网页版不能访问内网地址');
+  }
+}
 const mime = { '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.webp':'image/webp', '.gif':'image/gif' };
 export function uploadPath(url) {
   if (!/^\/uploads\/[a-zA-Z0-9-]+\.[a-zA-Z0-9]+$/.test(url)) throw new Error('无效的本地文件地址');
@@ -31,11 +64,12 @@ export async function imageUrl(url, maxBytes = 750_000) {
   throw new Error('不支持的图片地址');
 }
 export function selectModel(requested) {
+  const active = currentConfig();
   const value = String(requested || '').trim();
   // 旧版按钮键（Gemini/GPT/Claude）仍映射到设置里的对应模型；其他非“自动”的值视为用户勾选的真实模型 ID
   const legacy = {gemini_3_flash:'GEMINI',gpt_5_mini:'GPT',claude_sonnet_4_6:'CLAUDE',gemini:'GEMINI',gpt:'GPT',claude:'CLAUDE'}[value.toLowerCase()];
   if (!legacy && value && value !== 'automatic' && /^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,199}$/.test(value)) return value;
-  const model = (legacy && env[`AI_MODEL_${legacy}`]) || env.AI_MODEL;
+  const model = (legacy && active[`AI_MODEL_${legacy}`]) || active.AI_MODEL;
   if (!model) throw new Error('请在 API 设置页面填写模型名称');
   return model;
 }
@@ -59,11 +93,12 @@ function geminiRequest(body) {
   if (body.response_format?.type === 'json_object') request.generationConfig = {responseMimeType:'application/json'};
   return request;
 }
-export async function upstream(endpoint, body, settings = env) {
+export async function upstream(endpoint, body, settings = currentConfig()) {
   const provider = settings.AI_PROVIDER || 'compatible';
   if (!['compatible','gemini'].includes(provider)) throw new Error('不支持的 API 类型');
   if (!settings.AI_API_KEY) throw new Error('请在 API 设置页面填写 API Key');
   const baseUrl = normalizeApiBaseUrl(settings.AI_BASE_URL || (provider === 'gemini' ? 'https://generativelanguage.googleapis.com/v1beta' : 'https://api.lingkeai.ai/api/v1'));
+  assertPublicBaseUrl(baseUrl);
   const isGemini = provider === 'gemini';
   if (isGemini && endpoint !== '/chat/completions') throw new Error('Gemini 官方模式暂不支持此图片生成操作');
   const requestUrl = isGemini ? `${baseUrl}/models/${encodeURIComponent(body.model)}:generateContent` : `${baseUrl}${endpoint}`;
@@ -121,7 +156,7 @@ export async function InvokeLLM({ prompt, file_urls = [], response_json_schema, 
   if (response_json_schema) messages.push({role:'system', content:`Return only valid JSON matching this schema. Do not use Markdown fences.\n${JSON.stringify(response_json_schema)}`});
   messages.push({role:'user', content: file_urls.length ? content : prompt});
   const body = {model:selectModel(model), messages, stream:false};
-  if (response_json_schema && env.AI_JSON_MODE === 'json_object') body.response_format = {type:'json_object'};
+  if (response_json_schema && currentConfig().AI_JSON_MODE === 'json_object') body.response_format = {type:'json_object'};
   const result = await upstream('/chat/completions', body);
   const choice = result.choices?.[0];
   if (choice?.finish_reason === 'length') throw new Error('模型输出被截断，请提高平台输出上限或更换模型');
@@ -130,8 +165,9 @@ export async function InvokeLLM({ prompt, file_urls = [], response_json_schema, 
   return response_json_schema ? parseJson(text, response_json_schema) : text;
 }
 export async function GenerateImage({prompt}) {
-  if (!env.AI_IMAGE_MODEL) throw new Error('生成缩略图需要设置 AI_IMAGE_MODEL');
-  const result = await upstream('/images/generations', {model:env.AI_IMAGE_MODEL, prompt, n:1});
+  const active = currentConfig();
+  if (!active.AI_IMAGE_MODEL) throw new Error('生成缩略图需要设置 AI_IMAGE_MODEL');
+  const result = await upstream('/images/generations', {model:active.AI_IMAGE_MODEL, prompt, n:1});
   const item = result.data?.[0];
   if (item?.b64_json) {
     await fs.mkdir(uploadsDir, {recursive:true});

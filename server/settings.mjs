@@ -29,6 +29,7 @@ export function validateSettings(input) {
 }
 let saveQueue=Promise.resolve();
 export function saveSettings(input, file=process.env.CINE_SETTINGS_FILE || path.resolve('.env.local')) {
+  if (process.env.CINE_PUBLIC_WEB === '1') throw new Error('网页版密钥只保存在你的浏览器，不会写入服务器');
   const values=validateSettings(input);
   const operation=saveQueue.then(async()=>{
     let original='';

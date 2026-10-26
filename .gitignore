@@ -39,3 +39,4 @@ base44/.app.jsonc
 !.env.example
 local-data/
 server/.*.mjs
+server/runtime/
