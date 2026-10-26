@@ -14,7 +14,14 @@ const publicWeb = process.env.CINE_PUBLIC_WEB === '1';
 async function loadFunctions() {
   const functions = {};
   if (process.env.CINE_USE_PREBUILT === '1') {
-    for (const name of FUNCTION_NAMES) functions[name] = (await import(`./runtime/${name}.mjs`)).default;
+    const modules = await Promise.all([
+      import('./runtime/enhancePrompt.mjs'),
+      import('./runtime/analyzeStyleImage.mjs'),
+      import('./runtime/analyzeColorPalette.mjs'),
+      import('./runtime/generateStyleThumbnails.mjs'),
+      import('./runtime/parseStoryboard.mjs')
+    ]);
+    FUNCTION_NAMES.forEach((name, index) => { functions[name] = modules[index].default; });
     return functions;
   }
   const { transform } = await import('esbuild');

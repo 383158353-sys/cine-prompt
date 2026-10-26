@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { projectDatabase, changedRows } from '../shared/web-database.mjs';
 import { relocateFunction } from '../scripts/compile-functions.mjs';
+import { restoreApiUrl } from '../shared/request-url.mjs';
 import { withMemoryDatabase, entity } from '../server/local-client.mjs';
 import { withSettings, currentConfig, upstream } from '../server/ai.mjs';
 
@@ -53,10 +54,22 @@ test('memory database writes stay off disk', async () => {
   assert.equal(db.Prompt[0].id, row.id);
 });
 
+test('public api rewrite keeps the original path and query', () => {
+  assert.equal(restoreApiUrl('/api/handler?cinepath=/local/rpc'), '/api/local/rpc');
+  assert.equal(restoreApiUrl('/api/handler?cinepath=/local/voice/status&id=abc&cursor=2'), '/api/local/voice/status?id=abc&cursor=2');
+  assert.equal(restoreApiUrl('/api/local/rpc'), '/api/local/rpc');
+  assert.equal(restoreApiUrl('/api/handler?cinepath=../server/index.mjs'), '/api/handler?cinepath=../server/index.mjs');
+});
+
 test('packaged function imports resolve beside the server entry', () => {
   const source = "import { createClientFromRequest } from './local-client.mjs';\nimport { buildProjectStyleInstruction } from '../shared/project-styles.mjs';\nexport { parseStoryboard as default } from './spreadsheet.mjs';\n";
   const relocated = relocateFunction(source);
   assert.match(relocated, /from '\.\.\/local-client\.mjs'/);
   assert.match(relocated, /from '\.\.\/\.\.\/shared\/project-styles\.mjs'/);
   assert.match(relocated, /from '\.\.\/spreadsheet\.mjs'/);
+  const compiled = 'import { createClientFromRequest } from "./local-client.mjs";\nimport { buildProjectStyleInstruction } from "../shared/project-styles.mjs";\nexport { parseStoryboard as default } from "./spreadsheet.mjs";\n';
+  const relocatedCompiled = relocateFunction(compiled);
+  assert.match(relocatedCompiled, /from "\.\.\/local-client\.mjs"/);
+  assert.match(relocatedCompiled, /from "\.\.\/\.\.\/shared\/project-styles\.mjs"/);
+  assert.match(relocatedCompiled, /from "\.\.\/spreadsheet\.mjs"/);
 });

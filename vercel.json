@@ -3,12 +3,13 @@
   "buildCommand": "npm run build:web",
   "outputDirectory": "dist",
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/handler?cinepath=/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "functions": {
-    "api/[...path].mjs": {
+    "api/handler.mjs": {
       "maxDuration": 300,
-      "includeFiles": "{server,shared}/**"
+      "includeFiles": ["server/**", "shared/**"]
     }
   }
 }

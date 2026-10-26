@@ -9,8 +9,11 @@ const names = ['enhancePrompt', 'analyzeStyleImage', 'analyzeColorPalette', 'gen
 export function relocateFunction(code) {
   return code
     .replaceAll("from './local-client.mjs'", "from '../local-client.mjs'")
+    .replaceAll('from "./local-client.mjs"', 'from "../local-client.mjs"')
     .replaceAll("from './spreadsheet.mjs'", "from '../spreadsheet.mjs'")
-    .replaceAll("from '../shared/", "from '../../shared/");
+    .replaceAll('from "./spreadsheet.mjs"', 'from "../spreadsheet.mjs"')
+    .replaceAll("from '../shared/", "from '../../shared/")
+    .replaceAll('from "../shared/', 'from "../../shared/');
 }
 
 export async function compileFunctions() {
