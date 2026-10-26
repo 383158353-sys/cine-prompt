@@ -9,7 +9,7 @@
   "functions": {
     "api/handler.mjs": {
       "maxDuration": 300,
-      "includeFiles": ["server/**", "shared/**"]
+      "includeFiles": "{server,shared}/**"
     }
   }
 }
