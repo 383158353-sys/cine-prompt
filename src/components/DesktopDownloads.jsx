@@ -19,7 +19,7 @@ export default function DesktopDownloads() {
           </div>
           <div className="text-xs text-muted-foreground mt-4 space-y-2 leading-relaxed">
             <p>Windows：双击安装，从开始菜单打开「影词魔方」。进入 API 设置，填写自己的 Base URL、API Key 和模型，然后保存。需要 Photoshop 联动时，打开 Photoshop 25 或更新版本，在增效工具里打开「局部改图」，再填写自己的生图 Key。安装包会带上当前的局部改图插件。</p>
-            <p>Mac：解压后把「影词魔方」拖进「应用程序」再打开。系统若提示无法验证开发者，请右键点按应用并选择「打开」，或到「系统设置 → 隐私与安全性」选择「仍要打开」。这个 Mac 包没有 Apple 公证。Photoshop 的语音和拖放助手目前只在 Windows 安装包里；Mac 版是完整的影词魔方工作台，并会把插件文件复制到本机 Adobe 目录。</p>
+            <p>Mac（macOS 12 及以上）：解压后把「影词魔方」拖进「应用程序」再打开。系统若提示无法验证开发者，请右键点按应用并选择「打开」，或到「系统设置 → 隐私与安全性」选择「仍要打开」。这个 Mac 包没有 Apple 公证。Photoshop 的语音和拖放助手目前只在 Windows 安装包里；Mac 版是完整的影词魔方工作台，并会把插件文件复制到本机 Adobe 目录。</p>
             <p>密钥由使用者自己填写，只保存在自己的浏览器或电脑里。安装包和网页都不含密钥。不要分享 .env 或 .env.local。源代码给需要自己改的人：<a className="underline" href={DOWNLOADS.source}>GitHub</a>。</p>
           </div>
         </div>
