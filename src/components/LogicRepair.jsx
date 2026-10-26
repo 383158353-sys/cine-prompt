@@ -110,8 +110,8 @@ export default function LogicRepair({ onSaved, initialContext, sharedImages, onS
     setAnnotateIdx(null);
   };
 
-  const handleRepair = async (forceUpscale = false) => {
-    const useUpscale = forceUpscale === true || upscale;
+  const handleRepair = async () => {
+    const useUpscale = upscale;
     if (images.length === 0) return;
     setLoading(true);
     onTaskStatus?.('running');
@@ -193,10 +193,7 @@ export default function LogicRepair({ onSaved, initialContext, sharedImages, onS
           aria-pressed={upscale}
           onClick={() => {
             if (loading) return;
-            if (upscale) { setUpscale(false); return; }
-            setUpscale(true);
-            if (images.length === 0) { toast({ title: '请先上传需要超清的图片', variant: 'destructive' }); return; }
-            handleRepair(true);
+            setUpscale((v) => !v);
           }}
           className={`px-2.5 py-1 rounded-full text-[11px] transition-all ${upscale ? 'bg-foreground text-background' : 'bg-muted/40 text-muted-foreground hover:bg-muted/70'}`}
         >超清</button>
