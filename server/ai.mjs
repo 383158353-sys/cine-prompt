@@ -2,7 +2,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { loadEnv } from 'vite';
 import { readFileSync, existsSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import { modelImage } from './model-image.mjs';
@@ -10,7 +9,19 @@ import { normalizeApiBaseUrl } from './api-url.mjs';
 
 const appRoot = process.env.CINE_APP_ROOT || process.cwd();
 const settingsFile = process.env.CINE_SETTINGS_FILE || path.resolve('.env.local');
-const env = { ...loadEnv('development', appRoot, ''), ...(existsSync(settingsFile) ? parseEnv(readFileSync(settingsFile, 'utf8')) : {}), ...process.env };
+function readEnvFile(file) {
+  if (!existsSync(file)) return {};
+  return parseEnv(readFileSync(file, 'utf8'));
+}
+function loadLocalEnv(root, mode) {
+  return {
+    ...readEnvFile(path.join(root, '.env')),
+    ...readEnvFile(path.join(root, '.env.local')),
+    ...readEnvFile(path.join(root, `.env.${mode}`)),
+    ...readEnvFile(path.join(root, `.env.${mode}.local`))
+  };
+}
+const env = { ...loadLocalEnv(appRoot, 'development'), ...readEnvFile(settingsFile), ...process.env };
 export const dataDir = path.resolve(env.LOCAL_DATA_DIR || 'local-data');
 export const uploadsDir = path.join(dataDir, 'uploads');
 env.AI_MODEL ||= env.AI_PROVIDER === 'gemini' ? 'gemini-3.1-flash-lite' : 'gem-3.8-flash';

@@ -1,7 +1,11 @@
-import sharp from 'sharp';
-
 // In-memory model copies only: no writes to original uploads, no cross-request cache.
+let sharpLoader;
+function loadSharp() {
+  sharpLoader ||= import('sharp').then(mod => mod.default);
+  return sharpLoader;
+}
 export async function modelImage(buffer, mime, maxBytes = 750_000) {
+  const sharp = await loadSharp();
   const metadata = await sharp(buffer).metadata();
   if (buffer.length <= maxBytes && Math.max(metadata.width, metadata.height) <= 2048) {
     return `data:${mime};base64,${buffer.toString('base64')}`;
