@@ -122,6 +122,16 @@ test('local application integration with a mock OpenAI-compatible provider', asy
     }
     const repair=await fn('enhancePrompt',{mode:'repair',raw_input:'只修复人物的衣服',file_urls:[image],project_style});
     assert.equal(repair.status,200);
+    const upscale=await fn('enhancePrompt',{mode:'repair',repair_preset:'upscale',raw_input:'把衣服改成红色',file_urls:[image],project_style,color_palette:{id:'p',name:'暖调',scope:'environment',palette:['#112233','#445566'],colors:[{name:'主色',hex:'#112233',percentage:60,role:'Primary'},{name:'辅色',hex:'#445566',percentage:40,role:'Secondary'}]}});
+    assert.equal(upscale.status,200);
+    assert.match(upscale.data.repair_prompt_zh,/【超清】/);
+    assert.match(upscale.data.repair_prompt_zh,/不.*改变色调|色调/);
+    assert.match(upscale.data.repair_prompt_en,/Ultra-detail only/);
+    assert.doesNotMatch(upscale.data.repair_prompt_zh,/#112233/);
+    const upscaleRequest=calls.at(-1).body.messages.at(-1).content.find(part=>part.type==='text').text;
+    assert.match(upscaleRequest,/一键超清/);
+    assert.match(upscaleRequest,/只根据画面中物体自身已有的材质/);
+    assert.match(upscaleRequest,/禁止重新上色、重新打光/);
     const text=calls.at(-1).body.messages.at(-1).content.find(part=>part.type==='text').text;
     assert.match(text,/根据图片、用户要求和标注自动识别/);
     assert.match(text,/不得因选择项目风格而重做全图/);

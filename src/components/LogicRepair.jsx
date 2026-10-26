@@ -1,4 +1,5 @@
 import { projectStylePayload } from '../../shared/project-styles.mjs';
+import { UPSCALE_PRESET } from '../../shared/repair-presets.mjs';
 import React, { useState, useRef, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
@@ -73,6 +74,7 @@ export default function LogicRepair({ onSaved, initialContext, sharedImages, onS
   const [annotateIdx, setAnnotateIdx] = useState(null);
   const [showAnnotator, setShowAnnotator] = useState(false);
   const [analysisOpen, setAnalysisOpen] = useState(false);
+  const [upscale, setUpscale] = useState(false);
   const fileInput = useRef(null);
   const resultRef = useRef(null);
   const images = sharedImages ?? localImages;
@@ -108,7 +110,8 @@ export default function LogicRepair({ onSaved, initialContext, sharedImages, onS
     setAnnotateIdx(null);
   };
 
-  const handleRepair = async () => {
+  const handleRepair = async (forceUpscale = false) => {
+    const useUpscale = forceUpscale === true || upscale;
     if (images.length === 0) return;
     setLoading(true);
     onTaskStatus?.('running');
@@ -125,6 +128,7 @@ export default function LogicRepair({ onSaved, initialContext, sharedImages, onS
       file_urls = [...file_urls, ...existingUrls];
       const res = await base44.functions.invoke('enhancePrompt', {
         mode: 'repair',
+        repair_preset: useUpscale ? UPSCALE_PRESET : undefined,
         raw_input: context,
         file_urls,
         model,
@@ -148,7 +152,7 @@ export default function LogicRepair({ onSaved, initialContext, sharedImages, onS
           direction: 'repair',
           rating: 3,
           tags: data.tags || [],
-          context: { mode: 'repair', context, model, file_urls, style_names: selectedStyles.map((style) => style.name), project_style_id: projectStyle?.id, color_palette_id: selectedPalette?.id, color_palette_name: selectedPalette?.name }
+          context: { mode: 'repair', repair_preset: useUpscale ? UPSCALE_PRESET : '', context, model, file_urls, style_names: selectedStyles.map((style) => style.name), project_style_id: projectStyle?.id, color_palette_id: selectedPalette?.id, color_palette_name: selectedPalette?.name }
         });
         onSaved?.();
       } catch {}
@@ -181,6 +185,22 @@ export default function LogicRepair({ onSaved, initialContext, sharedImages, onS
       <div className="flex items-center gap-1.5 text-[11px] text-teal-600 bg-teal-400/10 border border-teal-400/30 rounded-lg px-2.5 py-1.5">
         <Wand2 className="w-3 h-3" />
         影视美术逻辑修复 · 框选错误区域，生成修复提示词
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button
+          type="button"
+          aria-pressed={upscale}
+          onClick={() => {
+            if (loading) return;
+            if (upscale) { setUpscale(false); return; }
+            setUpscale(true);
+            if (images.length === 0) { toast({ title: '请先上传需要超清的图片', variant: 'destructive' }); return; }
+            handleRepair(true);
+          }}
+          className={`px-2.5 py-1 rounded-full text-[11px] transition-all ${upscale ? 'bg-foreground text-background' : 'bg-muted/40 text-muted-foreground hover:bg-muted/70'}`}
+        >超清</button>
+        {upscale && <span className="text-[11px] text-muted-foreground">只按物体自身质感超分，不改色调、光影和其他内容。</span>}
       </div>
 
       <div
@@ -235,7 +255,7 @@ export default function LogicRepair({ onSaved, initialContext, sharedImages, onS
         {loading ? (
           <><Loader2 className="w-4 h-4 mr-2 animate-spin" />生成中…</>
         ) : (
-          <><Wand2 className="w-4 h-4 mr-2" />生成修复提示词</>
+          <><Wand2 className="w-4 h-4 mr-2" />{upscale ? '一键超清' : '生成修复提示词'}</>
         )}
       </Button>
 

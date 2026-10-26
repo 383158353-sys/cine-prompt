@@ -1,6 +1,7 @@
 import { createClientFromRequest } from './local-client.mjs';
 import { buildProjectStyleInstruction } from '../shared/project-styles.mjs';
 import { applyColorPaletteToPrompt, buildColorPaletteInstruction, normalizeColorPalette } from '../shared/color-palettes.mjs';
+import { applyUpscalePreset, isUpscalePreset, upscaleRepairInstruction } from '../shared/repair-presets.mjs';
 
 // 各目标模型的提示词格式指引（让目标模型选择真正起作用，而非摆设）
 const MODEL_GUIDE: Record<string, string> = {
@@ -1351,12 +1352,14 @@ export default async function(req) {
       if (repairFileUrls.length === 0) return Response.json({ error: '请上传场景图片' }, { status: 400 });
 
       const repairContext = (body.raw_input || '').toString().trim();
+      const upscale = isUpscalePreset(body.repair_preset);
       let repairPromptText = `${PRODUCTION_DESIGN_REPAIR_SKILL}\n\n用户上传了一张场景图，并在图上用红色圆圈/椭圆标注了需要修复的错误区域，可能还附有红色文字说明。请根据用户的标注生成精准的局部修复提示词。\n\n标注说明：\n- 红色圆圈/椭圆 = 用户标记的需要修复的错误区域\n- 红色文字 = 用户对该区域的修改说明\n\n请根据图中标注的区域和文字说明，生成精准的局部修复提示词。遵循最小修改原则——只修复用户标注的区域，保持其余部分完全不变。`;
-      const repairPalette = normalizeColorPalette(body.color_palette, 'environment');
+      const repairPalette = upscale ? null : normalizeColorPalette(body.color_palette, 'environment');
       if (repairContext) {
         repairPromptText += `\n\n用户补充的文字描述：${repairContext}`;
       }
       repairPromptText += sharedContextInstruction;
+      if (upscale) repairPromptText += upscaleRepairInstruction();
       repairPromptText += `\n\n请严格以JSON返回，包含title/scene_analysis/repair_prompt_zh/repair_prompt_en/negative_constraints/tags。\n- repair_prompt_zh = 中文修复提示词（可直接复制使用），格式：保持原图……不要改变……只修改以下区域：（根据标注逐一列出修改项）……最终要求……\n- repair_prompt_en = English Repair Prompt\n- negative_constraints = 负向约束（中文）\n- scene_analysis = 中文简述用户标注了哪些区域以及你将如何修复\n- title = 简短中文标题\n- tags = 3-5个中文标签`;
 
       const repairArgs = { prompt: repairPromptText, response_json_schema: REPAIR_SCHEMA, file_urls: repairFileUrls };
@@ -1371,7 +1374,7 @@ export default async function(req) {
       }
       if (!repairResult) throw repairErr || new Error('逻辑修复服务暂不可用，请稍后重试');
 
-      return Response.json({
+      const repairPayload = {
         title: repairResult.title,
         repair_prompt_zh: applyColorPaletteToPrompt(repairResult.repair_prompt_zh || '', repairPalette, 'environment', 'zh'),
         repair_prompt_en: applyColorPaletteToPrompt(repairResult.repair_prompt_en || '', repairPalette, 'environment', 'en'),
@@ -1381,7 +1384,8 @@ export default async function(req) {
         cleaned_input: repairContext,
         color_palette: repairPalette,
         mode: 'repair'
-      });
+      };
+      return Response.json(upscale ? applyUpscalePreset(repairPayload) : repairPayload);
     }
 
     // 台词处理：优化台词开关（默认关闭=保留原台词原封不动）
