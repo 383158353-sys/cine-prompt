@@ -4,7 +4,29 @@ import { projectDatabase } from '../../shared/web-database.mjs';
 const SETTINGS_KEY = 'cine-web-settings-v1';
 const DB_NAME = 'cine-prompt-private';
 const DB_STORE = 'rows';
+const ROWS_SCHEMA_VERSION = 1;
+const LEGACY_ENTITY_STORES = new Set(['Prompt', 'Direction', 'StyleLibrary', 'ColorPalette']);
 let databasePromise;
+
+export function planPublicDatabaseOpen(existingVersion, hasRowsStore) {
+  const version = Number(existingVersion);
+  if (!Number.isInteger(version) || version < 1) return { requestedVersion: ROWS_SCHEMA_VERSION };
+  if (hasRowsStore) return { requestedVersion: null };
+  return { requestedVersion: Math.max(version + 1, ROWS_SCHEMA_VERSION) };
+}
+
+export function mergeEntityRows(legacyRows, storedRows) {
+  const byId = new Map();
+  for (const row of legacyRows || []) {
+    if (row && typeof row === 'object' && row.id != null) byId.set(String(row.id), row);
+  }
+  for (const row of storedRows || []) {
+    if (!row || typeof row !== 'object') continue;
+    if (row.id != null) byId.set(String(row.id), row);
+    else byId.set(`__row${byId.size}`, row);
+  }
+  return [...byId.values()];
+}
 
 function readRawSettings() {
   try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null') || {}; }
@@ -47,24 +69,57 @@ function encodeSettings() {
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json; charset=utf-8' } });
 }
-function openDatabase() {
-  if (!databasePromise) databasePromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
+function openWith(factory, version) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error || new Error('浏览器数据库打开失败'));
+    };
+    const ok = (db) => {
+      if (settled) {
+        try { db?.close(); } catch { /* the blocked upgrade finished after we already gave up */ }
+        return;
+      }
+      settled = true;
+      resolve(db);
+    };
+    const request = version == null ? factory.open(DB_NAME) : factory.open(DB_NAME, version);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE, { keyPath: 'key' });
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => ok(request.result);
+    request.onerror = () => fail(request.error);
+    request.onblocked = () => fail(new Error('浏览器数据库正被其他页面占用，请关掉多余标签页后重试'));
   });
+}
+export async function openBrowserDatabase(factory = globalThis.indexedDB) {
+  const current = await openWith(factory, null);
+  const plan = planPublicDatabaseOpen(current.version, current.objectStoreNames.contains(DB_STORE));
+  if (plan.requestedVersion == null || plan.requestedVersion === current.version) return current;
+  if (plan.requestedVersion < current.version) {
+    current.close();
+    throw new Error('浏览器数据库版本不能回退');
+  }
+  current.close();
+  return openWith(factory, plan.requestedVersion);
+}
+function openDatabase() {
+  if (!databasePromise) {
+    databasePromise = openBrowserDatabase().catch(error => {
+      databasePromise = null;
+      throw error;
+    });
+  }
   return databasePromise;
 }
 function rowKey(name, id) { return `${name}/${id}`; }
-async function withStore(mode, fn) {
-  const db = await openDatabase();
+function runStore(db, storeName, mode, fn) {
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, mode);
-    const store = tx.objectStore(DB_STORE);
+    const tx = db.transaction(storeName, mode);
+    const store = tx.objectStore(storeName);
     let result;
     Promise.resolve().then(() => fn(store)).then(value => { result = value; }, reject);
     tx.oncomplete = () => resolve(result);
@@ -72,15 +127,36 @@ async function withStore(mode, fn) {
     tx.onabort = () => reject(tx.error || new Error('浏览器数据保存失败'));
   });
 }
+async function withStore(mode, fn) {
+  const db = await openDatabase();
+  return runStore(db, DB_STORE, mode, fn);
+}
 function requestToPromise(request) {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
 }
+async function readLegacy(name) {
+  if (!LEGACY_ENTITY_STORES.has(name)) return [];
+  const db = await openDatabase();
+  if (!db.objectStoreNames.contains(name)) return [];
+  const rows = await runStore(db, name, 'readonly', store => requestToPromise(store.getAll()));
+  return Array.isArray(rows) ? rows.filter(row => row && typeof row === 'object') : [];
+}
+async function deleteLegacy(name, id) {
+  if (!LEGACY_ENTITY_STORES.has(name) || id == null) return;
+  const db = await openDatabase();
+  if (!db.objectStoreNames.contains(name)) return;
+  await runStore(db, name, 'readwrite', store => requestToPromise(store.delete(id)));
+}
 async function readAll(name) {
-  const rows = await withStore('readonly', store => requestToPromise(store.getAll()));
-  return rows.filter(item => item.name === name).map(item => item.row);
+  const [legacy, wrapped] = await Promise.all([
+    readLegacy(name),
+    withStore('readonly', store => requestToPromise(store.getAll()))
+  ]);
+  const stored = (wrapped || []).filter(item => item?.name === name && item.row).map(item => item.row);
+  return mergeEntityRows(legacy, stored);
 }
 function matches(row, query) {
   return Object.entries(query || {}).every(([key, value]) => value && typeof value === 'object' ? ('$gte' in value && row[key] >= value.$gte) : row[key] === value);
@@ -114,6 +190,7 @@ async function entityAction(name, action, args) {
   }
   if (action === 'delete') {
     await withStore('readwrite', store => requestToPromise(store.delete(rowKey(name, args[0]))));
+    await deleteLegacy(name, args[0]);
     return { success: true };
   }
   throw new Error('未知操作');
