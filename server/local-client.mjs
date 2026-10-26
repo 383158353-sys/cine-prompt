@@ -1,12 +1,17 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { dataDir, InvokeLLM, GenerateImage } from './ai.mjs';
 
 export const localUser = {id:'local-user', full_name:'本地用户', email:'local@localhost', role:'user'};
 const allowed = new Set(['Prompt','Direction','StyleLibrary','ColorPalette']);
+const memory = new AsyncLocalStorage();
+export function withMemoryDatabase(db, fn) { return memory.run(db, fn); }
 let queue = Promise.resolve();
 async function transaction(fn, write = false) {
+  const overlay = memory.getStore();
+  if (overlay) return fn(overlay);
   const operation = queue.then(async () => {
     await fs.mkdir(dataDir, {recursive:true});
     const file = path.join(dataDir, 'db.json');

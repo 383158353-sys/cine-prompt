@@ -8,6 +8,8 @@
   "scripts": {
     "dev": "node server/index.mjs --dev",
     "build": "vite build",
+    "build:web": "VITE_PUBLIC_WEB=true VITE_CINE_COMMIT=$(git rev-parse --short HEAD) vite build && node scripts/compile-functions.mjs",
+    "package:desktop": "node scripts/build-desktop.mjs",
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
@@ -111,7 +113,6 @@
   "build": {
     "appId": "com.cineprompt.desktop",
     "productName": "影词魔方",
-    "electronDist": "node_modules/electron/dist",
     "asar": false,
     "directories": {
       "output": "release-desktop"
@@ -121,6 +122,7 @@
       "server/**/*",
       "shared/**/*",
       "desktop/**/*",
+      "!desktop/package/**",
       "public/brand-icon.png",
       "package.json",
       "node_modules/**/*"
@@ -139,7 +141,17 @@
       "target": [
         "nsis"
       ],
+      "signAndEditExecutable": false,
       "artifactName": "CinePrompt-Photoshop-Windows.exe"
+    },
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "identity": null,
+      "gatekeeperAssess": false,
+      "target": [
+        "zip"
+      ],
+      "artifactName": "CinePrompt-Mac-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": true,

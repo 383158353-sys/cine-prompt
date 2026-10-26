@@ -20,6 +20,8 @@ test('desktop installer bundles the PS plugin and keeps local data on uninstall'
   assert.equal(pkg.main,'desktop/main.cjs');
   assert.match(pkg.scripts['package:windows'],/build-desktop-installer\.ps1/);
   assert.equal(pkg.build.win.artifactName,'CinePrompt-Photoshop-Windows.exe');
+  assert.deepEqual(pkg.build.mac.target,['zip']);
+  assert.equal(pkg.build.mac.artifactName,'CinePrompt-Mac-${arch}.${ext}');
   assert.equal(pkg.build.nsis.oneClick,true);
   assert.equal(pkg.build.nsis.deleteAppDataOnUninstall,false);
   assert.ok(pkg.build.files.includes('shared/**/*'));
@@ -50,6 +52,10 @@ test('PowerShell installer sources stay ASCII for Windows PowerShell 5.1', () =>
 
 test('Photoshop download page targets the stable one-click desktop installer', () => {
   const source = fs.readFileSync(path.join(root, 'src/pages/InstallPhotoshop.jsx'), 'utf8');
-  assert.match(source, /releases\/latest\/download\/CinePrompt-Photoshop-Windows\.exe/);
+  const links = fs.readFileSync(path.join(root, 'src/lib/downloads.js'), 'utf8');
+  assert.match(source, /DesktopDownloads/);
   assert.match(source, /不需要管理员权限，也不需要另装 Node\.js/);
+  assert.match(links, /CinePrompt-Photoshop-Windows\.exe/);
+  assert.match(links, /CinePrompt-Mac-arm64\.zip/);
+  assert.match(links, /CinePrompt-Mac-x64\.zip/);
 });

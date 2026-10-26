@@ -35,9 +35,9 @@ function prepareLocalData() {
   if(fs.existsSync(legacyStartup))fs.unlinkSync(legacyStartup);
   if(app.isPackaged){
     const source=path.join(process.resourcesPath,'ps-plugin');
-    const target=path.join(process.env.APPDATA || '', 'Adobe','UXP','Plugins','External','com.local.lk888.psedit');
+    const target=path.join(app.getPath('appData'), 'Adobe','UXP','Plugins','External','com.local.lk888.psedit');
     if(fs.existsSync(source)){fs.mkdirSync(target,{recursive:true});fs.cpSync(source,target,{recursive:true,force:true});}
-    app.setLoginItemSettings({openAtLogin:true,path:process.execPath,args:['--hidden']});
+    try{app.setLoginItemSettings({openAtLogin:true,path:process.execPath,args:['--hidden']});}catch{}
   }
 }
 
@@ -45,7 +45,7 @@ function startServer() {
   const root=appRoot();
   serverProcess=spawn(process.execPath,[path.join(root,'server','index.mjs')],{
     cwd:app.getPath('userData'),
-    env:{...process.env,ELECTRON_RUN_AS_NODE:'1',CINE_APP_ROOT:root,CINE_SETTINGS_FILE:path.join(app.getPath('userData'),'.env.local'),LOCAL_DATA_DIR:path.join(app.getPath('userData'),'local-data'),PORT:String(PORT)},
+    env:{...process.env,ELECTRON_RUN_AS_NODE:'1',CINE_USE_PREBUILT:'1',CINE_APP_ROOT:root,CINE_SETTINGS_FILE:path.join(app.getPath('userData'),'.env.local'),LOCAL_DATA_DIR:path.join(app.getPath('userData'),'local-data'),PORT:String(PORT)},
     windowsHide:true,
     stdio:'ignore'
   });
