@@ -53,3 +53,22 @@ test('Photoshop download page targets the stable one-click desktop installer', (
   assert.match(source, /releases\/latest\/download\/CinePrompt-Photoshop-Windows\.exe/);
   assert.match(source, /不需要管理员权限，也不需要另装 Node\.js/);
 });
+
+test('mac desktop target and installer entrypoints exist', () => {
+  const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
+  assert.match(pkg.scripts['package:mac'],/build-desktop-installer-mac\.sh/);
+  assert.match(pkg.scripts['desktop:dist:mac'],/--mac/);
+  assert.ok(pkg.build.mac);
+  assert.equal(pkg.build.mac.artifactName,'CinePrompt-Photoshop-Mac.${ext}');
+  assert.ok(pkg.build.mac.target.includes('dmg'));
+  assert.ok(pkg.build.mac.target.includes('zip'));
+  for (const file of [
+    'scripts/build-desktop-installer-mac.sh',
+    'installer/macos/启动影词魔方.command',
+    'installer/macos/安装PS插件到UXP.command',
+  ]) assert.ok(fs.statSync(path.join(root, file)).isFile(), `${file} is missing`);
+  const main=fs.readFileSync(path.join(root,'desktop/main.cjs'),'utf8');
+  assert.match(main,/Application Support.*Adobe.*UXP.*Plugins.*External/s);
+  assert.match(main,/app\.getPath\('userData'\)/);
+  assert.match(main,/process\.platform/);
+});

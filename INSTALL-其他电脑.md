@@ -11,6 +11,18 @@
 
 本机设置与历史数据在重装时会保留；**不要**把 `.env` / `.env.local` 或含密钥的文件拷到公开仓库。
 
+## macOS（双平台）
+
+1. 发布页下载 `CinePrompt-Photoshop-Mac.dmg`（未签名时需在「系统设置 → 隐私与安全性」允许打开），或源码：`npm install && npm run desktop`
+2. 安装包会把「局部改图」拷到  
+   `~/Library/Application Support/Adobe/UXP/Plugins/External/com.local.lk888.psedit`
+3. 打开 Photoshop → 增效工具 →「局部改图」；影词魔方里填 API
+4. 源码辅助入口：`installer/macos/启动影词魔方.command`、`installer/macos/安装PS插件到UXP.command`
+5. 打包：`PS_PLUGIN_SOURCE=/path/to/ps-local-edit/plugin npm run package:mac`  
+   （本助手 box 默认 `/workspace/push-ps/ps-local-edit/plugin`）
+
+macOS 一期：桌面壳 + 桥接 + 插件安装可用；系统听写/拖入接图层/一键插入到任意输入框为二期。
+
 ## 开发/源码方式
 
 1. 安装 Node.js 22+ LTS

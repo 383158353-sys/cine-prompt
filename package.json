@@ -17,7 +17,9 @@
     "check:api": "node server/check-api.mjs",
     "package:windows": "powershell -ExecutionPolicy Bypass -File scripts/build-desktop-installer.ps1",
     "desktop": "electron .",
-    "desktop:dist": "npm run build && electron-builder --win nsis"
+    "desktop:dist": "npm run build && electron-builder --win nsis",
+    "package:mac": "bash scripts/build-desktop-installer-mac.sh",
+    "desktop:dist:mac": "npm run build && electron-builder --mac dmg zip"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^17.0.0",
@@ -148,6 +150,18 @@
       "createStartMenuShortcut": true,
       "shortcutName": "影词魔方",
       "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "artifactName": "CinePrompt-Photoshop-Mac.${ext}",
+      "category": "public.app-category.graphics-design",
+      "identity": null
+    },
+    "dmg": {
+      "title": "影词魔方"
     }
   },
   "engines": {

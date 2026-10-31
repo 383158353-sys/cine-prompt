@@ -2,9 +2,12 @@ const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain } = require('electr
 const { spawn, spawnSync } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 
 const PORT = 5173;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
+const IS_WIN = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
 let serverProcess;
 let photoshopHelperProcess;
 let mainWindow;
@@ -16,102 +19,210 @@ function appRoot() {
   return app.isPackaged ? app.getAppPath() : path.resolve(__dirname, '..');
 }
 
-function prepareLocalData() {
-  const userData=app.getPath('userData');
-  fs.mkdirSync(userData,{recursive:true});
-  const legacyRoot=path.join(process.env.LOCALAPPDATA || '', 'CinePrompt','app');
-  const legacyInstall=path.dirname(legacyRoot);
-  const settings=path.join(userData,'.env.local');
-  if(!fs.existsSync(settings) && fs.existsSync(path.join(legacyRoot,'.env.local')))fs.copyFileSync(path.join(legacyRoot,'.env.local'),settings);
-  const data=path.join(userData,'local-data');
-  if(!fs.existsSync(data) && fs.existsSync(path.join(legacyRoot,'local-data')))fs.cpSync(path.join(legacyRoot,'local-data'),data,{recursive:true});
-  const legacyPidFile=path.join(legacyInstall,'cine-prompt.pid');
-  if(fs.existsSync(legacyPidFile)){
-    const pid=Number(fs.readFileSync(legacyPidFile,'utf8').trim());
-    const expected=path.join(legacyRoot,'node.exe').replaceAll("'","''");
-    if(Number.isInteger(pid) && pid>0)spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',`$p=Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" -ErrorAction SilentlyContinue;if($p -and $p.ExecutablePath -eq '${expected}'){Stop-Process -Id ${pid} -Force}`],{windowsHide:true});
+/** Adobe UXP External plugin install directory (per OS). */
+function uxpExternalPluginDir() {
+  const id = 'com.local.lk888.psedit';
+  if (IS_WIN) {
+    return path.join(process.env.APPDATA || '', 'Adobe', 'UXP', 'Plugins', 'External', id);
   }
-  const legacyStartup=path.join(process.env.APPDATA || '', 'Microsoft','Windows','Start Menu','Programs','Startup','CinePrompt Connector.cmd');
-  if(fs.existsSync(legacyStartup))fs.unlinkSync(legacyStartup);
-  if(app.isPackaged){
-    const source=path.join(process.resourcesPath,'ps-plugin');
-    const target=path.join(process.env.APPDATA || '', 'Adobe','UXP','Plugins','External','com.local.lk888.psedit');
-    if(fs.existsSync(source)){fs.mkdirSync(target,{recursive:true});fs.cpSync(source,target,{recursive:true,force:true});}
-    app.setLoginItemSettings({openAtLogin:true,path:process.execPath,args:['--hidden']});
+  if (IS_MAC) {
+    return path.join(os.homedir(), 'Library', 'Application Support', 'Adobe', 'UXP', 'Plugins', 'External', id);
+  }
+  // Linux / other: still under home Application Support style path for manual testing
+  return path.join(os.homedir(), '.adobe', 'UXP', 'Plugins', 'External', id);
+}
+
+function migrateLegacyWindowsData(userData) {
+  if (!IS_WIN) return;
+  const legacyRoot = path.join(process.env.LOCALAPPDATA || '', 'CinePrompt', 'app');
+  const legacyInstall = path.dirname(legacyRoot);
+  const settings = path.join(userData, '.env.local');
+  if (!fs.existsSync(settings) && fs.existsSync(path.join(legacyRoot, '.env.local'))) {
+    fs.copyFileSync(path.join(legacyRoot, '.env.local'), settings);
+  }
+  const data = path.join(userData, 'local-data');
+  if (!fs.existsSync(data) && fs.existsSync(path.join(legacyRoot, 'local-data'))) {
+    fs.cpSync(path.join(legacyRoot, 'local-data'), data, { recursive: true });
+  }
+  const legacyPidFile = path.join(legacyInstall, 'cine-prompt.pid');
+  if (fs.existsSync(legacyPidFile)) {
+    const pid = Number(fs.readFileSync(legacyPidFile, 'utf8').trim());
+    const expected = path.join(legacyRoot, 'node.exe').replaceAll("'", "''");
+    if (Number.isInteger(pid) && pid > 0) {
+      spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `$p=Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" -ErrorAction SilentlyContinue;if($p -and $p.ExecutablePath -eq '${expected}'){Stop-Process -Id ${pid} -Force}`], { windowsHide: true });
+    }
+  }
+  const legacyStartup = path.join(process.env.APPDATA || '', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'CinePrompt Connector.cmd');
+  if (fs.existsSync(legacyStartup)) fs.unlinkSync(legacyStartup);
+}
+
+function installBundledPsPlugin() {
+  if (!app.isPackaged) return;
+  const source = path.join(process.resourcesPath, 'ps-plugin');
+  const target = uxpExternalPluginDir();
+  if (fs.existsSync(source)) {
+    fs.mkdirSync(target, { recursive: true });
+    fs.cpSync(source, target, { recursive: true, force: true });
+  }
+}
+
+function prepareLocalData() {
+  const userData = app.getPath('userData');
+  fs.mkdirSync(userData, { recursive: true });
+  migrateLegacyWindowsData(userData);
+  if (app.isPackaged) {
+    installBundledPsPlugin();
+    // Login item: Electron abstracts Win/Mac; codesign/notarize later for Gatekeeper.
+    app.setLoginItemSettings({ openAtLogin: true, path: process.execPath, args: ['--hidden'] });
   }
 }
 
 function startServer() {
-  const root=appRoot();
-  serverProcess=spawn(process.execPath,[path.join(root,'server','index.mjs')],{
-    cwd:app.getPath('userData'),
-    env:{...process.env,ELECTRON_RUN_AS_NODE:'1',CINE_APP_ROOT:root,CINE_SETTINGS_FILE:path.join(app.getPath('userData'),'.env.local'),LOCAL_DATA_DIR:path.join(app.getPath('userData'),'local-data'),PORT:String(PORT)},
-    windowsHide:true,
-    stdio:'ignore'
+  const root = appRoot();
+  serverProcess = spawn(process.execPath, [path.join(root, 'server', 'index.mjs')], {
+    cwd: app.getPath('userData'),
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      CINE_APP_ROOT: root,
+      CINE_SETTINGS_FILE: path.join(app.getPath('userData'), '.env.local'),
+      LOCAL_DATA_DIR: path.join(app.getPath('userData'), 'local-data'),
+      PORT: String(PORT),
+    },
+    windowsHide: true,
+    stdio: 'ignore',
   });
 }
 
 function startPhotoshopHelper() {
-  if(!app.isPackaged)return;
-  const helper=path.join(process.resourcesPath,'ps-companion','scripts','voice-server.cjs');
-  if(!fs.existsSync(helper))return;
-  photoshopHelperProcess=spawn(process.execPath,[helper],{cwd:path.dirname(helper),env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},windowsHide:true,stdio:'ignore'});
-  photoshopHelperProcess.on('error',()=>{photoshopHelperProcess=null;});
+  if (!app.isPackaged) return;
+  const helper = path.join(process.resourcesPath, 'ps-companion', 'scripts', 'voice-server.cjs');
+  if (!fs.existsSync(helper)) return;
+  photoshopHelperProcess = spawn(process.execPath, [helper], {
+    cwd: path.dirname(helper),
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    windowsHide: true,
+    stdio: 'ignore',
+  });
+  photoshopHelperProcess.on('error', () => { photoshopHelperProcess = null; });
 }
 
 async function waitForServer() {
-  for(let attempt=0;attempt<80;attempt++){
-    try{const response=await fetch(`${BASE_URL}/api/bridge/health`,{headers:{'X-Cine-Bridge':'1'}});if(response.ok)return;}
-    catch{}
-    await new Promise(resolve=>setTimeout(resolve,250));
+  for (let attempt = 0; attempt < 80; attempt++) {
+    try {
+      const response = await fetch(`${BASE_URL}/api/bridge/health`, { headers: { 'X-Cine-Bridge': '1' } });
+      if (response.ok) return;
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 250));
   }
   throw new Error('影词魔方服务启动超时');
 }
 
-function showWindow(url='/') {
-  if(!mainWindow)return;
-  if(url)mainWindow.loadURL(BASE_URL+url);
-  mainWindow.show();mainWindow.restore();mainWindow.focus();
+function showWindow(url = '/') {
+  if (!mainWindow) return;
+  if (url) mainWindow.loadURL(BASE_URL + url);
+  mainWindow.show();
+  mainWindow.restore();
+  mainWindow.focus();
+}
+
+/**
+ * Phase-2 TODO (macOS): restore previous app focus + pasteboard insert via
+ * NSPasteboard / AppleScript Accessibility. Windows CF_HDROP / SendInput paths
+ * stay behind win32 gates when added; do not run them on darwin.
+ */
+function restoreFocusAndInsertStub(reason) {
+  if (IS_WIN) {
+    // Win insert helpers (CF_HDROP etc.) live elsewhere when enabled.
+    return;
+  }
+  console.log('[影词魔方] macOS insert/focus not implemented yet:', reason || 'skipped');
 }
 
 function createWindow() {
-  mainWindow=new BrowserWindow({width:430,height:820,minWidth:360,minHeight:560,show:false,alwaysOnTop:true,autoHideMenuBar:true,title:'影词魔方',webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false}});
+  mainWindow = new BrowserWindow({
+    width: 430,
+    height: 820,
+    minWidth: 360,
+    minHeight: 560,
+    show: false,
+    alwaysOnTop: true,
+    autoHideMenuBar: true,
+    title: '影词魔方',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
   mainWindow.setAlwaysOnTop(true, 'floating');
-  mainWindow.on('close',event=>{if(!stopping){event.preventDefault();mainWindow.hide();}});
-  mainWindow.webContents.setWindowOpenHandler(({url})=>{require('electron').shell.openExternal(url);return {action:'deny'};});
+  mainWindow.on('close', event => {
+    if (!stopping) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    require('electron').shell.openExternal(url);
+    return { action: 'deny' };
+  });
 }
 
 async function pollBridge() {
-  if(stopping)return;
-  try{
-    const response=await fetch(`${BASE_URL}/api/bridge/activity?after=${eventCursor}`,{headers:{'X-Cine-Bridge':'1'}});
-    const event=await response.json();
-    if(event.sequence>eventCursor){eventCursor=event.sequence;if(event.sessionId && event.state==='waiting')showWindow(`/?bridge=${encodeURIComponent(event.sessionId)}`);}
-  }catch{}
-  setTimeout(pollBridge,500).unref?.();
+  if (stopping) return;
+  try {
+    const response = await fetch(`${BASE_URL}/api/bridge/activity?after=${eventCursor}`, { headers: { 'X-Cine-Bridge': '1' } });
+    const event = await response.json();
+    if (event.sequence > eventCursor) {
+      eventCursor = event.sequence;
+      if (event.sessionId && event.state === 'waiting') showWindow(`/?bridge=${encodeURIComponent(event.sessionId)}`);
+    }
+  } catch {}
+  setTimeout(pollBridge, 500).unref?.();
 }
 
 function createTray() {
-  const icon=nativeImage.createFromPath(path.join(appRoot(),'public','brand-icon.png'));
-  tray=new Tray(icon.resize({width:20,height:20}));
+  const icon = nativeImage.createFromPath(path.join(appRoot(), 'public', 'brand-icon.png'));
+  tray = new Tray(icon.resize({ width: 20, height: 20 }));
   tray.setToolTip('影词魔方');
   tray.setContextMenu(Menu.buildFromTemplate([
-    {label:'打开影词魔方',click:()=>showWindow('/')},
-    {type:'separator'},
-    {label:'退出',click:()=>{stopping=true;app.quit();}}
+    { label: '打开影词魔方', click: () => showWindow('/') },
+    { type: 'separator' },
+    { label: '退出', click: () => { stopping = true; app.quit(); } },
   ]));
-  tray.on('double-click',()=>showWindow('/'));
+  tray.on('double-click', () => showWindow('/'));
+  // macOS often uses click instead of double-click for tray
+  if (IS_MAC) tray.on('click', () => showWindow('/'));
 }
 
-ipcMain.handle('cine:hide',()=>mainWindow.hide());
-
-app.whenReady().then(async()=>{
-  if(!app.requestSingleInstanceLock())return app.quit();
-  prepareLocalData();
-  startServer();startPhotoshopHelper();createWindow();createTray();
-  try{await waitForServer();if(!process.argv.includes('--hidden'))showWindow('/');pollBridge();}catch(error){mainWindow.loadURL(`data:text/plain;charset=utf-8,${encodeURIComponent(error.message)}`);mainWindow.show();}
+ipcMain.handle('cine:hide', () => mainWindow.hide());
+ipcMain.handle('cine:insert-stub', (_event, reason) => {
+  restoreFocusAndInsertStub(reason);
+  return { ok: false, platform: process.platform, deferred: !IS_WIN };
 });
-app.on('second-instance',()=>showWindow('/'));
-app.on('window-all-closed',()=>{});
-app.on('before-quit',()=>{stopping=true;serverProcess?.kill();photoshopHelperProcess?.kill();});
 
+app.whenReady().then(async () => {
+  if (!app.requestSingleInstanceLock()) return app.quit();
+  prepareLocalData();
+  startServer();
+  startPhotoshopHelper();
+  createWindow();
+  createTray();
+  try {
+    await waitForServer();
+    if (!process.argv.includes('--hidden')) showWindow('/');
+    pollBridge();
+  } catch (error) {
+    mainWindow.loadURL(`data:text/plain;charset=utf-8,${encodeURIComponent(error.message)}`);
+    mainWindow.show();
+  }
+});
+app.on('second-instance', () => showWindow('/'));
+app.on('window-all-closed', () => {});
+app.on('before-quit', () => {
+  stopping = true;
+  serverProcess?.kill();
+  photoshopHelperProcess?.kill();
+});
+
+module.exports = { uxpExternalPluginDir };

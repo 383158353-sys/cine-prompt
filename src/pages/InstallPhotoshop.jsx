@@ -29,7 +29,7 @@ export default function InstallPhotoshop() {
           </div>
           <h1 className="text-2xl font-bold mb-2">安装 Photoshop 连接器</h1>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            一个安装包同时配置影词魔方桌面悬浮版、局部改图插件和本机连接服务。换电脑后重新安装即可。
+            Windows 一键安装包同时配置影词魔方桌面悬浮版、局部改图插件和本机连接服务。macOS 请使用 Releases 中的 CinePrompt-Photoshop-Mac.dmg，或见 INSTALL-其他电脑.md。换电脑后重新安装即可。
           </p>
         </div>
 

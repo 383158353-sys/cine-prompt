@@ -1,7 +1,7 @@
 # 影词模方本地版
 
 
-> **另一台 Windows 电脑**：请看 [INSTALL-其他电脑.md](INSTALL-其他电脑.md)；桌面安装包在 [Releases](https://github.com/383158353-sys/cine-prompt/releases)。
+> **另一台电脑（Windows / macOS）**：请看 [INSTALL-其他电脑.md](INSTALL-其他电脑.md)；桌面安装包在 [Releases](https://github.com/383158353-sys/cine-prompt/releases)。
 
 安装 Node.js 22 或更新的 LTS 版本。解压后：
 
@@ -11,7 +11,9 @@
 
 Windows 可直接双击 `启动影词模方.bat`。也仍支持用 `配置API.bat` 编辑配置。
 
-面向普通用户的 Windows 联动包可运行 `npm run package:windows` 生成。直接运行 `release-desktop/CinePrompt-Photoshop-Windows.exe` 即可安装，无需预装 Node.js。安装包包含影词魔方桌面程序、Photoshop「局部改图」插件和本机语音/图片助手；首次使用时需在 API 设置中填写自己的密钥，并在 Photoshop 增效工具中打开「局部改图」。构建机需设置 `PS_PLUGIN_SOURCE` 指向 `ps-local-edit/plugin`，未设置时会尝试本机开发路径 `D:\PS2025\ps-local-edit\plugin`。另一台电脑无需该开发路径。重新安装时本机设置和历史数据会保留。
+面向普通用户的 Windows 联动包可运行 `npm run package:windows` 生成。直接运行 `release-desktop/CinePrompt-Photoshop-Windows.exe` 即可安装，无需预装 Node.js。安装包包含影词魔方桌面程序、Photoshop「局部改图」插件和本机语音/图片助手；首次使用时需在 API 设置中填写自己的密钥，并在 Photoshop 增效工具中打开「局部改图」。构建机需设置 `PS_PLUGIN_SOURCE` 指向 `ps-local-edit/plugin`：Windows 未设置时默认 `D:\PS2025\ps-local-edit\plugin`；macOS/`npm run package:mac` 在本助手环境默认 `/workspace/push-ps/ps-local-edit/plugin`（可用环境变量覆盖）。另一台电脑无需该开发路径。重新安装时本机设置和历史数据会保留。
+
+macOS 桌面包：`npm run package:mac` → `release-desktop/CinePrompt-Photoshop-Mac.dmg`（当前未配置 codesign/notarize，仅本机/测试）。也可双击 `installer/macos/启动影词魔方.command`。
 
 ```env
 AI_PROVIDER=compatible
