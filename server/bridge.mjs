@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { uploadsDir } from './ai.mjs';
+import { dataDir, uploadsDir } from './ai.mjs';
 
 export const BRIDGE_HEADER = 'x-cine-bridge';
 export const BRIDGE_ORIGINS = new Set([
@@ -22,12 +22,33 @@ function publish(session) {
   latestEvent = { sequence: ++eventSequence, sessionId: session.id, state: session.state };
 }
 
+async function referencedUploadNames(directory) {
+  let text;
+  try { text = await fs.readFile(path.join(directory, 'db.json'), 'utf8'); }
+  catch (error) {
+    if (error.code === 'ENOENT') return new Set();
+    throw error;
+  }
+  return new Set([...text.matchAll(/\/uploads\/([A-Za-z0-9-]+\.[A-Za-z0-9]+)/g)].map(match => match[1]));
+}
+
+// Bridge files share uploads/ with Prompt history. Drop true orphans only.
+export async function releaseSessionUploads(files, directory = dataDir) {
+  let referenced;
+  try { referenced = await referencedUploadNames(directory); }
+  catch { return; }
+  await Promise.allSettled((files || []).map(file => {
+    if (!file?.path || referenced.has(path.basename(file.path))) return undefined;
+    return fs.unlink(file.path);
+  }));
+}
+
 function expireSession(session) {
   clearTimeout(session.expiryTimer);
   session.expiryTimer = setTimeout(async () => {
     sessions.delete(session.id);
     if(session.state==='waiting')session.reject(Object.assign(new Error('影词魔方联动已超时，请重新点击 PS 的优化按钮'),{status:504}));
-    await Promise.allSettled((session.files || []).map(file => fs.unlink(file.path)));
+    await releaseSessionUploads(session.files);
   }, 15 * 60 * 1000);
   session.expiryTimer.unref?.();
 }

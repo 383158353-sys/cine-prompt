@@ -15,15 +15,23 @@ export const uploadsDir = path.join(dataDir, 'uploads');
 env.AI_MODEL ||= env.AI_PROVIDER === 'gemini' ? 'gemini-3.1-flash-lite' : 'gem-3.8-flash';
 export const config = env;
 const mime = { '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.webp':'image/webp', '.gif':'image/gif' };
+export const MISSING_UPLOAD_MESSAGE = '参考图文件已丢失或过期，请重新上传后再试';
 export function uploadPath(url) {
   if (!/^\/uploads\/[a-zA-Z0-9-]+\.[a-zA-Z0-9]+$/.test(url)) throw new Error('无效的本地文件地址');
   return path.join(uploadsDir, path.basename(url));
+}
+export async function readUpload(file) {
+  try { return await fs.readFile(file); }
+  catch (error) {
+    if (error.code === 'ENOENT') throw Object.assign(new Error(MISSING_UPLOAD_MESSAGE), {status:404, cause:error});
+    throw error;
+  }
 }
 export async function imageUrl(url, maxBytes = 750_000) {
   if (url.startsWith('/uploads/')) {
     const file = uploadPath(url);
     if (!mime[path.extname(file)]) throw new Error('视觉输入需要 PNG/JPEG/WebP/GIF 图片');
-    return modelImage(await fs.readFile(file), mime[path.extname(file)], maxBytes);
+    return modelImage(await readUpload(file), mime[path.extname(file)], maxBytes);
   }
   const inline = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(url);
   if (inline) return modelImage(Buffer.from(inline[2], 'base64'), inline[1], maxBytes);
