@@ -15,7 +15,8 @@ Get-ChildItem -LiteralPath $PluginSource -Force | Copy-Item -Destination $stage 
 $companion=Join-Path $root 'desktop\package\ps-companion\scripts'
 New-Item -ItemType Directory -Force -Path $companion | Out-Null
 Get-ChildItem -LiteralPath (Join-Path (Split-Path -Parent $PluginSource) 'scripts') -Filter '*.ps1' | Copy-Item -Destination $companion -Force
-Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $PluginSource) 'scripts\voice-server.cjs') -Destination $companion -Force
+Copy-Item -LiteralPath (Join-Path $root 'desktop\helper\voice-server.cjs') -Destination (Join-Path $companion 'voice-server.cjs') -Force
+Copy-Item -LiteralPath (Join-Path $root 'desktop\helper\image-prepare.cjs') -Destination (Join-Path $companion 'image-prepare.cjs') -Force
 & $npm run build
 if($LASTEXITCODE -ne 0){throw 'Frontend build failed.'}
 & (Join-Path $root 'node_modules\.bin\electron-builder.cmd') --win nsis
