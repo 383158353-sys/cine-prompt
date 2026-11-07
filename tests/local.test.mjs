@@ -171,6 +171,20 @@ test('local application integration with a mock OpenAI-compatible provider', asy
     fault='json';assert.equal((await fn('enhancePrompt',{raw_input:'角色'})).status,500);
     fault='401';const result=await fn('enhancePrompt',{raw_input:'角色'});assert.equal(result.status,500);assert.match(result.data.error,/401/);assert.ok(!JSON.stringify(result).includes('credential-echo-test'));fault='';
   });
+  await t.test('missing reference uploads return a Chinese error instead of ENOENT',async()=>{
+    const missing='/uploads/393abe35-b8fc-4424-9b6f-8c1ab785453f.png';
+    const preview=await fetch(base+missing);
+    assert.equal(preview.status,404);
+    const previewBody=await preview.json();
+    assert.equal(previewBody.error,'参考图文件已丢失或过期，请重新上传后再试');
+    assert.doesNotMatch(JSON.stringify(previewBody),/ENOENT|no such file/i);
+    const before=calls.length;
+    const repair=await fn('enhancePrompt',{mode:'repair',raw_input:'只修窗帘',file_urls:[missing]});
+    assert.equal(repair.status,500);
+    assert.equal(repair.data.error,'参考图文件已丢失或过期，请重新上传后再试');
+    assert.doesNotMatch(JSON.stringify(repair.data),/ENOENT|no such file/i);
+    assert.equal(calls.length,before);
+  });
   await t.test('cross-origin calls and unknown operations are rejected',async()=>{
     assert.equal((await fetch(base+'/api/local/rpc',{method:'POST',headers:{Origin:'https://example.com','Content-Type':'application/json'},body:'{}'})).status,403);
     assert.equal((await rpc({kind:'entity',name:'../secret',action:'list'})).status,400);

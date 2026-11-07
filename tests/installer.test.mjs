@@ -26,7 +26,8 @@ test('desktop installer bundles the PS plugin and keeps local data on uninstall'
   assert.ok(pkg.build.extraResources.some(item=>item.to==='ps-plugin'));
   assert.ok(pkg.build.extraResources.some(item=>item.to==='ps-companion'));
   const packager=fs.readFileSync(path.join(root,'scripts/build-desktop-installer.ps1'),'utf8');
-  assert.match(packager,/voice-server\.cjs/);
+  assert.match(packager,/desktop\\helper\\scripts\\voice-server\.cjs/);
+  assert.match(packager,/desktop\\helper\\plugin\\image-budget\.js/);
   const main=fs.readFileSync(path.join(root,'desktop/main.cjs'),'utf8');
   assert.match(main,/setAlwaysOnTop/);
   assert.match(main,/bridge\/activity/);

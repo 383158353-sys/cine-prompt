@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { createServer as createViteServer } from 'vite';
 import { transform } from 'esbuild';
 import { entity, localUser } from './local-client.mjs';
-import { config, uploadsDir, uploadPath } from './ai.mjs';
+import { config, readUpload, uploadsDir, uploadPath } from './ai.mjs';
 
 import { publicSettings, saveSettings, testSettings, listModels, testModels } from './settings.mjs';
 import { authorizeBridge, bridgeActivity, bridgeCors, completeBridgeSession, getBridgeSession, optimizeBridge } from './bridge.mjs';
@@ -102,7 +102,7 @@ const server = http.createServer(async(req,res) => {
     }
     if(url.pathname.startsWith('/api/')) return json(res,{error:'接口不存在'},404);
     if(url.pathname.startsWith('/uploads/')) {
-      const file=uploadPath(url.pathname); const data=await fs.readFile(file);
+      const file=uploadPath(url.pathname); const data=await readUpload(file);
       res.writeHead(200,{'Content-Type':types[path.extname(file)] || 'application/octet-stream','X-Content-Type-Options':'nosniff'});return res.end(data);
     }
     if(vite) return vite.middlewares(req,res);
